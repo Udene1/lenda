@@ -1,0 +1,8 @@
+{
+    "ProxyAdmin": "0x7C7c5E74969f319d2C7615Cbfa831AB58f2DFE42",
+    "TranchingLogic": "0x397099A37512D76375D7c101C5A15D7456610CbE",
+    "GoldfinchConfigImplementation": "0x7DAdEabcA67605d9fD476a8533a5297304dB0b6d",
+    "GoldfinchConfig": "0x4a72DB93c3160F6877906A0413b2Bd867577b239",
+    "UniqueIdentityImplementation": "0xB92550f22A9153F67ea8d520F89aeB728d1a2A56",
+    "UniqueIdentity": "0x4b5ED67f75b004ecB55afB79182D8654BC57074c"
+}
