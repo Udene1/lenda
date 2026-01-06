@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Navbar } from "@/components/Navbar";
 import { useBorrowerProfile } from "@/hooks/useBorrowerProfile";
 import { useUniqueIdentity } from "@/hooks/useUniqueIdentity";
+import { useGoldfinchFactory } from "@/hooks/useGoldfinchFactory";
 import { TransactionToast, ToastType } from "@/components/TransactionToast";
 import {
     PlusCircle,
@@ -54,9 +55,17 @@ export default function BorrowersPage() {
         refetch: refetchKyc
     } = useUniqueIdentity();
 
-    const isPending = isProfilePending || isKycPending;
-    const isSuccess = isProfileSuccess || isKycSuccess;
-    const writeError = profileError || kycError;
+    const {
+        isBorrower,
+        proposePool,
+        isPending: isPoolPending,
+        isSuccess: isPoolSuccess,
+        writeError: poolError
+    } = useGoldfinchFactory();
+
+    const isPending = isProfilePending || isKycPending || isPoolPending;
+    const isSuccess = isProfileSuccess || isKycSuccess || isPoolSuccess;
+    const writeError = profileError || kycError || poolError;
     const refetch = () => { refetchProfile(); refetchKyc(); };
 
     const [name, setName] = useState("");
@@ -67,6 +76,11 @@ export default function BorrowersPage() {
     const [ipfsCid, setIpfsCid] = useState("");
     const [docType, setDocType] = useState(0);
     const [docDesc, setDocDesc] = useState("");
+
+    // Pool Creation State
+    const [poolLimit, setPoolLimit] = useState("");
+    const [poolApr, setPoolApr] = useState("");
+    const [poolJuniorFee, setPoolJuniorFee] = useState("20");
 
     // Toast State
     const [toast, setToast] = useState<{ visible: boolean; type: ToastType; title: string; message?: string }>({
@@ -129,6 +143,11 @@ export default function BorrowersPage() {
     const handleUploadDoc = async (e: React.FormEvent) => {
         e.preventDefault();
         uploadDocument(ipfsCid, docType, docDesc);
+    };
+
+    const handleProposePool = async (e: React.FormEvent) => {
+        e.preventDefault();
+        proposePool(poolLimit, poolApr, poolJuniorFee);
     };
 
     if (!address) {
@@ -408,6 +427,89 @@ export default function BorrowersPage() {
                                         </div>
                                     )}
                                 </div>
+                            </div>
+                        </div>
+
+                        {/* Credit Facilities */}
+                        <div className="lg:col-span-3">
+                            <div className="card border-blue-500/10">
+                                <div className="flex items-center gap-3 mb-8">
+                                    <PlusCircle className="w-6 h-6 text-blue-500" />
+                                    <h2 className="text-xl font-bold uppercase italic">Propose New Credit Facility</h2>
+                                </div>
+
+                                {!isBorrower ? (
+                                    <div className="p-8 rounded-3xl bg-amber-500/5 border border-amber-500/10 text-center">
+                                        <ShieldCheck className="w-12 h-12 text-amber-500 mx-auto mb-4 opacity-50" />
+                                        <h3 className="text-lg font-bold text-amber-500 uppercase tracking-widest mb-2">Restricted Access</h3>
+                                        <p className="text-slate-400 max-w-md mx-auto mb-6">
+                                            Creating a lending pool requires the <code className="text-amber-400">BORROWER_ROLE</code> on the Goldfinch Factory.
+                                            Contact the protocol governance to be whitelisted.
+                                        </p>
+                                        <div className="flex justify-center">
+                                            <a
+                                                href="https://sepolia.basescan.org/address/0x47Cfad746B35621AFd51d53A4224dA61dfEb71A3#writeProxyContract"
+                                                target="_blank"
+                                                className="btn-secondary px-8 flex items-center gap-2"
+                                            >
+                                                Request Whitelist <ExternalLink className="w-4 h-4" />
+                                            </a>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <form onSubmit={handleProposePool} className="grid md:grid-cols-3 gap-6">
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-bold text-slate-500 uppercase tracking-widest ml-1">Limit (USDC)</label>
+                                            <input
+                                                type="number"
+                                                value={poolLimit}
+                                                onChange={(e) => setPoolLimit(e.target.value)}
+                                                className="w-full bg-slate-900 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 transition-all font-medium"
+                                                placeholder="e.g. 50000"
+                                                required
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-bold text-slate-500 uppercase tracking-widest ml-1">Interest APR (%)</label>
+                                            <input
+                                                type="number"
+                                                step="0.1"
+                                                value={poolApr}
+                                                onChange={(e) => setPoolApr(e.target.value)}
+                                                className="w-full bg-slate-900 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 transition-all font-medium"
+                                                placeholder="e.g. 12.5"
+                                                required
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-bold text-slate-500 uppercase tracking-widest ml-1">Junior Fee (%)</label>
+                                            <input
+                                                type="number"
+                                                value={poolJuniorFee}
+                                                onChange={(e) => setPoolJuniorFee(e.target.value)}
+                                                className="w-full bg-slate-900 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 transition-all font-medium"
+                                                placeholder="e.g. 20"
+                                                required
+                                            />
+                                        </div>
+                                        <div className="md:col-span-3 p-4 bg-white/5 rounded-2xl border border-white/5">
+                                            <p className="text-xs text-slate-400 leading-relaxed">
+                                                <Info className="w-3 h-3 inline mr-1 mb-0.5 text-blue-500" />
+                                                By proposing this pool, you will create a new <strong>12-month Tranched Pool</strong> with a bullet principal repayment.
+                                                The pool will be immediately fundable on the protocol.
+                                            </p>
+                                        </div>
+                                        <div className="md:col-span-3">
+                                            <button
+                                                disabled={isPending}
+                                                className="btn-primary w-full py-4 flex items-center justify-center gap-2 group disabled:opacity-50 disabled:cursor-not-allowed"
+                                            >
+                                                {isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <PlusCircle className="w-5 h-5 group-hover:rotate-12 transition-transform" />}
+                                                {isPending ? "Proposing Facility..." : "Launch Lending Pool"}
+                                            </button>
+                                        </div>
+                                    </form>
+                                )}
                             </div>
                         </div>
                     </div>

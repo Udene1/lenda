@@ -22,6 +22,8 @@
     "TranchedPoolImplementation": "0x1f1c01062a9AFa30A10a700c5a484847bFf76e11",
     "GoldfinchFactoryImplementation": "0x9E465DdDceb7Da47D0a0CC035fD1c4578db7f6F0",
     "GoldfinchFactory": "0x47Cfad746B35621AFd51d53A4224dA61dfEb71A3",
-    "UniqueIdentityOldImplementation": "0x1225350AB3AeF61d7D311CDc6c21E14B59F1F585"
+    "UniqueIdentityOldImplementation": "0x1225350AB3AeF61d7D311CDc6c21E14B59F1F585",
+    "MonthlyScheduleRepo": "0x3efC3259F45C4a61CeB8c6E85edD127a3a77Fb51",
+    "DefaultSchedule": "0x6e4683a44314F601530CfB163e57847F8B703112"
   }
 }
