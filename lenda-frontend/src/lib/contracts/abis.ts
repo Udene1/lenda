@@ -766,3 +766,63 @@ export const GoldfinchConfigABI = [
         "type": "function"
     }
 ] as const;
+
+export const GoldfinchFactoryABI = [
+    {
+        "inputs": [
+            { "internalType": "address", "name": "_borrower", "type": "address" },
+            { "internalType": "uint256", "name": "_juniorFeePercent", "type": "uint256" },
+            { "internalType": "uint256", "name": "_limit", "type": "uint256" },
+            { "internalType": "uint256", "name": "_interestApr", "type": "uint256" },
+            { "internalType": "address", "name": "_schedule", "type": "address" },
+            { "internalType": "uint256", "name": "_lateFeeApr", "type": "uint256" },
+            { "internalType": "uint256", "name": "_fundableAt", "type": "uint256" },
+            { "internalType": "uint256[]", "name": "_allowedUIDTypes", "type": "uint256[]" },
+            { "internalType": "bool", "name": "_seniorOnly", "type": "bool" }
+        ],
+        "name": "createPool",
+        "outputs": [{ "internalType": "address", "name": "pool", "type": "address" }],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "BORROWER_ROLE",
+        "outputs": [{ "internalType": "bytes32", "name": "", "type": "bytes32" }],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            { "internalType": "bytes32", "name": "role", "type": "bytes32" },
+            { "internalType": "address", "name": "account", "type": "address" }
+        ],
+        "name": "hasRole",
+        "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "isBorrower",
+        "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
+        "stateMutability": "view",
+        "type": "function"
+    }
+] as const;
+
+export const MonthlyScheduleRepoABI = [
+    {
+        "inputs": [
+            { "internalType": "uint256", "name": "periodsInTerm", "type": "uint256" },
+            { "internalType": "uint256", "name": "periodsPerPrincipalPeriod", "type": "uint256" },
+            { "internalType": "uint256", "name": "periodsPerInterestPeriod", "type": "uint256" },
+            { "internalType": "uint256", "name": "gracePrincipalPeriods", "type": "uint256" }
+        ],
+        "name": "createSchedule",
+        "outputs": [{ "internalType": "address", "name": "", "type": "address" }],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    }
+] as const;
+
