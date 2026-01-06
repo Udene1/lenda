@@ -9,25 +9,20 @@ export function useGoldfinchFactory() {
     const { data: hash, writeContract, isPending, error: writeError } = useWriteContract();
     const { isLoading: isWaiting, isSuccess } = useWaitForTransactionReceipt({ hash });
 
-    const [borrowerRole, setBorrowerRole] = useState<string | null>(null);
-
-    // Read BORROWER_ROLE hash
-    const { data: roleData } = useReadContract({
-        address: GOLDFINCH_FACTORY_ADDRESS as `0x${string}`,
-        abi: GoldfinchFactoryABI,
-        functionName: "BORROWER_ROLE",
-    });
-
-    useEffect(() => {
-        if (roleData) setBorrowerRole(roleData as string);
-    }, [roleData]);
-
     // Check if user is borrower
     const { data: isBorrower } = useReadContract({
         address: GOLDFINCH_FACTORY_ADDRESS as `0x${string}`,
         abi: GoldfinchFactoryABI,
-        functionName: "hasRole",
-        args: borrowerRole && address ? [borrowerRole, (address as string).toLowerCase()] : undefined,
+        functionName: "isBorrower",
+        account: address as `0x${string}`,
+    });
+
+    // Check if user is admin
+    const { data: isAdmin } = useReadContract({
+        address: GOLDFINCH_FACTORY_ADDRESS as `0x${string}`,
+        abi: GoldfinchFactoryABI,
+        functionName: "isAdmin",
+        account: address as `0x${string}`,
     });
 
     /**
@@ -43,7 +38,6 @@ export function useGoldfinchFactory() {
         const limitRaw = parseUnits(limitUsdc, 6); // USDC 6 decimals
         const juniorFeeRaw = BigInt(juniorFeePercent);
         // Goldfinch uses 18 decimals for APR. 10% = 1e17.
-        // If user input is "10", we want 10 * 10^16 = 10^17.
         const aprRaw = parseUnits(interestAprPercent, 16);
 
         const lateFeeAprRaw = parseUnits("5", 16);
@@ -68,7 +62,7 @@ export function useGoldfinchFactory() {
     };
 
     return {
-        isBorrower: !!isBorrower,
+        isBorrower: !!(isBorrower || isAdmin),
         proposePool,
         isPending: isPending || isWaiting,
         isSuccess,

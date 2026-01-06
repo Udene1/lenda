@@ -793,6 +793,13 @@ export const GoldfinchFactoryABI = [
         "type": "function"
     },
     {
+        "inputs": [],
+        "name": "OWNER_ROLE",
+        "outputs": [{ "internalType": "bytes32", "name": "", "type": "bytes32" }],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
         "inputs": [
             { "internalType": "bytes32", "name": "role", "type": "bytes32" },
             { "internalType": "address", "name": "account", "type": "address" }
@@ -805,6 +812,13 @@ export const GoldfinchFactoryABI = [
     {
         "inputs": [],
         "name": "isBorrower",
+        "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "isAdmin",
         "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
         "stateMutability": "view",
         "type": "function"
