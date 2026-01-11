@@ -34,7 +34,7 @@ export default function LandingPage() {
           </h1>
           <p className="text-slate-400 text-lg md:text-xl max-w-2xl mx-auto mb-10 leading-relaxed">
             Borrow against real-world credit with unprecedented transparency.
-            Lenda empowers institutional borrowers and retail lenders on the world's most scalable L2.
+            Lenda empowers institutional borrowers and retail lenders on the world&apos;s most scalable L2.
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
