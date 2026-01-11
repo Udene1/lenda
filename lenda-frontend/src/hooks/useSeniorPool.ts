@@ -112,7 +112,7 @@ export function useSeniorPool() {
         fiduBalance: fiduBalance as bigint | undefined,
         withdrawalTokenCount: withdrawalTokenCount as bigint | undefined,
         withdrawalRequests: (withdrawalRequests || []).map((res, i) => ({
-            tokenId: (wrtIds?.[i]?.result as bigint),
+            tokenId: (wrtIds?.[i]?.result as any),
             ...(res.result as any)
         })).filter(req => req.tokenId !== undefined),
         currentEpoch: currentEpoch as any,
