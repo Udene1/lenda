@@ -1,16 +1,5 @@
-// SPDX-License-Identifier:MIT
-// solhint-disable no-inline-assembly
-
-/*
-  Vendored from @opengsn/gsn@2.1.0
-  Reason:
-   * @opengsn/gsn is deprecated and does not compile for node 16. Replacement package
-   * has incompatable changes.
-  Alterations:
-   * change solidity version from 0.6.2 -> 0.6.12 to match our contracts
-*/
-
-pragma solidity 0.6.12;
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
 
 import "./IRelayRecipient.sol";
 
@@ -34,7 +23,7 @@ abstract contract BaseRelayRecipient is IRelayRecipient {
    * otherwise, return `msg.sender`.
    * should be used in the contract anywhere instead of msg.sender
    */
-  function _msgSender() internal view virtual override returns (address payable ret) {
+  function _msgSender() internal view virtual override returns (address ret) {
     if (msg.data.length >= 24 && isTrustedForwarder(msg.sender)) {
       // At this point we know that the sender is a trusted forwarder,
       // so we trust that the last bytes of msg.data are the verified sender address.
@@ -55,20 +44,9 @@ abstract contract BaseRelayRecipient is IRelayRecipient {
    * should be used in the contract instead of msg.data, where the difference matters (e.g. when explicitly
    * signing or hashing the
    */
-  function _msgData() internal view virtual override returns (bytes memory ret) {
+  function _msgData() internal view virtual override returns (bytes calldata) {
     if (msg.data.length >= 24 && isTrustedForwarder(msg.sender)) {
-      // At this point we know that the sender is a trusted forwarder,
-      // we copy the msg.data , except the last 20 bytes (and update the total length)
-      assembly {
-        let ptr := mload(0x40)
-        // copy only size-20 bytes
-        let size := sub(calldatasize(), 20)
-        // structure RLP data as <offset> <length> <bytes>
-        mstore(ptr, 0x20)
-        mstore(add(ptr, 32), size)
-        calldatacopy(add(ptr, 64), 0, size)
-        return(ptr, add(size, 64))
-      }
+      return msg.data[:msg.data.length - 20];
     } else {
       return msg.data;
     }

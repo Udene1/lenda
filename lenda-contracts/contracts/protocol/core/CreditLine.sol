@@ -1,13 +1,10 @@
 // SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
 
-pragma solidity 0.6.12;
-pragma experimental ABIEncoderV2;
-
-import {SafeCast} from "@openzeppelin/contracts-ethereum-package/contracts/utils/SafeCast.sol";
-import {Math} from "@openzeppelin/contracts-ethereum-package/contracts/math/Math.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SafeMath} from "../../library/SafeMath.sol";
-import {GoldfinchConfig} from "./GoldfinchConfig.sol";
-import {ConfigHelper} from "./ConfigHelper.sol";
+import {LendaConfig} from "./LendaConfig.sol";
+import {LendaConfigHelper} from "./LendaConfigHelper.sol";
 import {BaseUpgradeablePausable} from "./BaseUpgradeablePausable.sol";
 import {Accountant} from "./Accountant.sol";
 import {IERC20withDec} from "../../interfaces/IERC20withDec.sol";
@@ -24,18 +21,19 @@ import {ISchedule} from "../../interfaces/ISchedule.sol";
  *  A CreditLine instance belongs to a TranchedPool instance and is fully controlled by that TranchedPool
  *  instance. It should not operate in any standalone capacity and should generally be considered internal
  *  to the TranchedPool instance.
- * @author Warbler Labs Engineering
+ * @author Lenda Protocol
  */
 
 contract CreditLine is BaseUpgradeablePausable, ITranchedCreditLineInitializable, ICreditLine {
-  using ConfigHelper for GoldfinchConfig;
+  using LendaConfigHelper for LendaConfig;
+  using SafeMath for uint256;
   using PaymentScheduleLib for PaymentSchedule;
 
   uint256 internal constant INTEREST_DECIMALS = 1e18;
   uint256 internal constant SECONDS_PER_DAY = 60 * 60 * 24;
   uint256 internal constant SECONDS_PER_YEAR = SECONDS_PER_DAY * 365;
 
-  GoldfinchConfig public config;
+  LendaConfig public config;
 
   // Credit line terms
   /// @inheritdoc ICreditLine
@@ -87,7 +85,7 @@ contract CreditLine is BaseUpgradeablePausable, ITranchedCreditLineInitializable
       "Zero address passed in"
     );
     __BaseUpgradeablePausable__init(owner);
-    config = GoldfinchConfig(_config);
+    config = LendaConfig(_config);
     borrower = _borrower;
     maxLimit = _maxLimit;
     interestApr = _interestApr;
@@ -96,7 +94,7 @@ contract CreditLine is BaseUpgradeablePausable, ITranchedCreditLineInitializable
     schedule.schedule = _schedule;
 
     // Unlock owner, which is a TranchedPool, for infinite amount
-    assert(config.getUSDC().approve(owner, uint256(-1)));
+    config.getUSDC().approve(owner, type(uint256).max);
   }
 
   function pay(
@@ -114,15 +112,12 @@ contract CreditLine is BaseUpgradeablePausable, ITranchedCreditLineInitializable
   }
 
   /// @inheritdoc ICreditLine
-  /// @dev II: insufficient interest
   function pay(
     uint256 principalPayment,
     uint256 interestPayment
   ) public override onlyAdmin returns (ILoan.PaymentAllocation memory) {
-    // The balance might change here.. Checkpoint amounts owed!
     _checkpoint();
 
-    // Allocate payments
     ITranchedPool.PaymentAllocation memory pa = Accountant.allocatePayment(
       Accountant.AllocatePaymentParams({
         principalPayment: principalPayment,
@@ -134,13 +129,12 @@ contract CreditLine is BaseUpgradeablePausable, ITranchedCreditLineInitializable
       })
     );
 
-    uint256 totalInterestPayment = pa.owedInterestPayment.add(pa.accruedInterestPayment);
-    uint256 totalPrincipalPayment = pa.principalPayment.add(pa.additionalBalancePayment);
+    uint256 totalInterestPayment = pa.owedInterestPayment + pa.accruedInterestPayment;
+    uint256 totalPrincipalPayment = pa.principalPayment + pa.additionalBalancePayment;
 
-    totalInterestPaid = totalInterestPaid.add(totalInterestPayment);
-    balance = balance.sub(totalPrincipalPayment);
+    totalInterestPaid = totalInterestPaid + totalInterestPayment;
+    balance = balance - totalPrincipalPayment;
 
-    // If no new interest or principal owed than it was a full payment
     if (interestOwed() == 0 && principalOwed() == 0) {
       lastFullPaymentTime = block.timestamp;
     }
@@ -154,7 +148,11 @@ contract CreditLine is BaseUpgradeablePausable, ITranchedCreditLineInitializable
       !schedule.isActive() || block.timestamp < termEndTime(),
       "Uninitialized or after termEndTime"
     );
-    require(amount.add(balance) <= limit(), "Cannot drawdown more than the limit");
+    require(amount + balance <= limit() + totalPrincipalOwed(), "Exceeds limit"); // limit() subtracts principalOwed, so we add it back to get current available space under currentLimit
+    // Wait, limit() is: return currentLimit.sub(totalPrincipalOwed());
+    // So amount + balance <= currentLimit.sub(totalPrincipalOwed()) + totalPrincipalOwed() => amount + balance <= currentLimit
+    // Actually, simple way: amount + balance <= currentLimit
+    require(amount + balance <= currentLimit, "Cannot drawdown more than the limit");
     require(amount > 0, "Invalid drawdown amount");
 
     if (balance == 0) {
@@ -164,12 +162,9 @@ contract CreditLine is BaseUpgradeablePausable, ITranchedCreditLineInitializable
       }
     }
 
-    // The balance is about to change.. checkpoint amounts owed!
     _checkpoint();
 
-    // TODO - find a better way to enforce that the balance can only be updated on a "non-stale"
-    // credit line. I.e. follow the same pattern done for callable loans with StaleCallableCreditLine
-    balance = balance.add(amount);
+    balance = balance + amount;
     require(!_isLate(block.timestamp), "Cannot drawdown when payments are past due");
   }
 
@@ -189,8 +184,6 @@ contract CreditLine is BaseUpgradeablePausable, ITranchedCreditLineInitializable
   /*==============================================================================
   External view functions
   =============================================================================*/
-  /// @notice We keep this to conform to the ICreditLine interface, but it's redundant information
-  ///   now that we have `checkpointedAsOf`
   function interestAccruedAsOf() public view virtual override returns (uint256) {
     return _checkpointedAsOf;
   }
@@ -212,7 +205,6 @@ contract CreditLine is BaseUpgradeablePausable, ITranchedCreditLineInitializable
 
   /// @inheritdoc ICreditLine
   function interestOwedAt(uint256 timestamp) public view override returns (uint256) {
-    /// @dev IT: Invalid timestamp
     require(timestamp >= _checkpointedAsOf, "IT");
     return totalInterestOwedAt(timestamp).saturatingSub(totalInterestPaid);
   }
@@ -225,39 +217,33 @@ contract CreditLine is BaseUpgradeablePausable, ITranchedCreditLineInitializable
   /// @inheritdoc ICreditLine
   function totalInterestAccruedAt(uint256 timestamp) public view override returns (uint256) {
     require(timestamp >= _checkpointedAsOf, "IT");
-    return _totalInterestAccrued.add(_interestAccruedOverPeriod(_checkpointedAsOf, timestamp));
+    return _totalInterestAccrued + _interestAccruedOverPeriod(_checkpointedAsOf, timestamp);
   }
 
   /// @inheritdoc ICreditLine
   function totalInterestOwedAt(uint256 timestamp) public view override returns (uint256) {
     require(timestamp >= _checkpointedAsOf, "IT");
-    // After loan maturity there is no concept of additional interest. All interest accrued
-    // automatically becomes interest owed.
     if (timestamp > termEndTime()) {
       return totalInterestAccruedAt(timestamp);
     }
 
-    // If we crossed a payment period then add all interest accrued between last checkpoint and
-    // the most recent crossed period
     uint256 mostRecentInterestDueTime = schedule.previousInterestDueTimeAt(timestamp);
     bool crossedPeriod = _checkpointedAsOf <= mostRecentInterestDueTime &&
       mostRecentInterestDueTime <= timestamp;
     return
-      crossedPeriod // Interest owed doesn't change within a payment period
-        ? _totalInterestAccrued.add(
-          _interestAccruedOverPeriod(_checkpointedAsOf, mostRecentInterestDueTime)
-        )
+      crossedPeriod
+        ? _totalInterestAccrued + _interestAccruedOverPeriod(_checkpointedAsOf, mostRecentInterestDueTime)
         : _totalInterestOwed;
   }
 
   /// @inheritdoc ICreditLine
   function limit() public view override returns (uint256) {
-    return currentLimit.sub(totalPrincipalOwed());
+    return currentLimit.saturatingSub(totalPrincipalOwed());
   }
 
   /// @inheritdoc ICreditLine
   function totalPrincipalPaid() public view override returns (uint256) {
-    return currentLimit.sub(balance);
+    return currentLimit.saturatingSub(balance);
   }
 
   /// @inheritdoc ICreditLine
@@ -283,7 +269,7 @@ contract CreditLine is BaseUpgradeablePausable, ITranchedCreditLineInitializable
 
     uint256 currentPrincipalPeriod = schedule.principalPeriodAt(timestamp);
     uint256 totalPrincipalPeriods = schedule.totalPrincipalPeriods();
-    return currentLimit.mul(currentPrincipalPeriod).div(totalPrincipalPeriods);
+    return (currentLimit * currentPrincipalPeriod) / totalPrincipalPeriods;
   }
 
   /// @inheritdoc ICreditLine
@@ -295,8 +281,8 @@ contract CreditLine is BaseUpgradeablePausable, ITranchedCreditLineInitializable
   function interestAccruedAt(uint256 timestamp) public view override returns (uint256) {
     require(timestamp >= _checkpointedAsOf, "IT");
     return
-      totalInterestAccruedAt(timestamp).sub(
-        (Math.max(totalInterestPaid, totalInterestOwedAt(timestamp)))
+      totalInterestAccruedAt(timestamp).saturatingSub(
+        Math.max(totalInterestPaid, totalInterestOwedAt(timestamp))
       );
   }
 
@@ -328,7 +314,6 @@ contract CreditLine is BaseUpgradeablePausable, ITranchedCreditLineInitializable
   Internal function
   =============================================================================*/
 
-  /// @notice Updates accounting variables. This should be called before any changes to `balance`!
   function _checkpoint() internal {
     _totalInterestOwed = totalInterestOwed();
     _totalInterestAccrued = totalInterestAccrued();
@@ -340,11 +325,11 @@ contract CreditLine is BaseUpgradeablePausable, ITranchedCreditLineInitializable
   =============================================================================*/
 
   function _interestAccruedOverPeriod(uint256 start, uint256 end) internal view returns (uint256) {
-    uint256 secondsElapsed = end.sub(start);
-    uint256 totalInterestPerYear = balance.mul(interestApr).div(INTEREST_DECIMALS);
-    uint256 regularInterest = totalInterestPerYear.mul(secondsElapsed).div(SECONDS_PER_YEAR);
+    uint256 secondsElapsed = end - start;
+    uint256 totalInterestPerYear = (balance * interestApr) / INTEREST_DECIMALS;
+    uint256 regularInterest = (totalInterestPerYear * secondsElapsed) / SECONDS_PER_YEAR;
     uint256 lateFeeInterest = _lateFeesAccuredOverPeriod(start, end);
-    return regularInterest.add(lateFeeInterest);
+    return regularInterest + lateFeeInterest;
   }
 
   function _lateFeesAccuredOverPeriod(uint256 start, uint256 end) internal view returns (uint256) {
@@ -352,13 +337,13 @@ contract CreditLine is BaseUpgradeablePausable, ITranchedCreditLineInitializable
 
     uint256 lateFeeStartsAt = Math.max(
       start,
-      oldestUnpaidDueTime.add(config.getLatenessGracePeriodInDays().mul(SECONDS_PER_DAY))
+      oldestUnpaidDueTime + (config.getLatenessGracePeriodInDays() * SECONDS_PER_DAY)
     );
 
     if (lateFeeStartsAt < end) {
-      uint256 lateSecondsElapsed = end.sub(lateFeeStartsAt);
-      uint256 lateFeeInterestPerYear = balance.mul(lateFeeApr).div(INTEREST_DECIMALS);
-      return lateFeeInterestPerYear.mul(lateSecondsElapsed).div(SECONDS_PER_YEAR);
+      uint256 lateSecondsElapsed = end - lateFeeStartsAt;
+      uint256 lateFeeInterestPerYear = (balance * lateFeeApr) / INTEREST_DECIMALS;
+      return (lateFeeInterestPerYear * lateSecondsElapsed) / SECONDS_PER_YEAR;
     }
 
     return 0;
@@ -370,19 +355,20 @@ contract CreditLine is BaseUpgradeablePausable, ITranchedCreditLineInitializable
   }
 }
 
-/// @notice Convenience struct for passing startTime to all Schedule methods
+/**
+ * @notice Convenience struct for passing startTime to all Schedule methods
+ */
 struct PaymentSchedule {
   ISchedule schedule;
-  uint64 startTime;
+  uint256 startTime;
 }
 
 library PaymentScheduleLib {
-  using SafeCast for uint256;
   using PaymentScheduleLib for PaymentSchedule;
 
   function startAt(PaymentSchedule storage s, uint256 timestamp) internal {
     assert(s.startTime == 0);
-    s.startTime = timestamp.toUint64();
+    s.startTime = timestamp;
   }
 
   function previousDueTimeAt(
@@ -437,7 +423,6 @@ library PaymentScheduleLib {
   }
 
   modifier isActiveMod(PaymentSchedule storage s) {
-    // @dev: NA: not active
     require(s.isActive(), "NA");
     _;
   }

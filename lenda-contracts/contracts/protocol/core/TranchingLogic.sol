@@ -1,28 +1,21 @@
 // SPDX-License-Identifier: MIT
-
-pragma solidity 0.6.12;
-pragma experimental ABIEncoderV2;
+pragma solidity ^0.8.0;
 
 import {ICreditLine} from "../../interfaces/ICreditLine.sol";
 import {ITranchedPool} from "../../interfaces/ITranchedPool.sol";
 import {IPoolTokens} from "../../interfaces/IPoolTokens.sol";
-import {GoldfinchConfig} from "./GoldfinchConfig.sol";
-import {ConfigHelper} from "./ConfigHelper.sol";
+import {LendaConfig} from "./LendaConfig.sol";
+import {LendaConfigHelper} from "./LendaConfigHelper.sol";
 import {FixedPoint} from "../../external/FixedPoint.sol";
-import {Math} from "@openzeppelin/contracts-ethereum-package/contracts/math/Math.sol";
-import {SafeMath} from "@openzeppelin/contracts-ethereum-package/contracts/math/SafeMath.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /**
  * @title TranchingLogic
  * @notice Library for handling the payments waterfall
- * @author Goldfinch
+ * @author Lenda Protocol
  */
-
 library TranchingLogic {
-  using SafeMath for uint256;
-  using FixedPoint for FixedPoint.Unsigned;
-  using FixedPoint for uint256;
-  using ConfigHelper for GoldfinchConfig;
+  using LendaConfigHelper for LendaConfig;
 
   struct SliceInfo {
     uint256 reserveFeePercent;
@@ -42,15 +35,15 @@ library TranchingLogic {
   uint256 public constant NUM_TRANCHES_PER_SLICE = 2;
 
   function usdcToSharePrice(uint256 amount, uint256 totalShares) public pure returns (uint256) {
-    return totalShares == 0 ? 0 : amount.mul(FP_SCALING_FACTOR).div(totalShares);
+    return totalShares == 0 ? 0 : (amount * FP_SCALING_FACTOR) / totalShares;
   }
 
   function sharePriceToUsdc(uint256 sharePrice, uint256 totalShares) public pure returns (uint256) {
-    return sharePrice.mul(totalShares).div(FP_SCALING_FACTOR);
+    return (sharePrice * totalShares) / FP_SCALING_FACTOR;
   }
 
-  function lockTranche(ITranchedPool.TrancheInfo storage tranche, GoldfinchConfig config) external {
-    tranche.lockedUntil = block.timestamp.add(config.getDrawdownPeriodInSeconds());
+  function lockTranche(ITranchedPool.TrancheInfo storage tranche, LendaConfig config) external {
+    tranche.lockedUntil = block.timestamp + config.getDrawdownPeriodInSeconds();
     emit TrancheLocked(address(this), tranche.id, tranche.lockedUntil);
   }
 
@@ -58,21 +51,17 @@ library TranchingLogic {
     ITranchedPool.TrancheInfo storage trancheInfo,
     IPoolTokens.TokenInfo memory tokenInfo
   ) public view returns (uint256, uint256) {
-    // This supports withdrawing before or after locking because principal share price starts at 1
-    // and is set to 0 on lock. Interest share price is always 0 until interest payments come back, when it increases
     uint256 maxPrincipalRedeemable = sharePriceToUsdc(
       trancheInfo.principalSharePrice,
       tokenInfo.principalAmount
     );
-    // The principalAmount is used as the totalShares because we want the interestSharePrice to be expressed as a
-    // percent of total loan value e.g. if the interest is 10% APR, the interestSharePrice should approach a max of 0.1.
     uint256 maxInterestRedeemable = sharePriceToUsdc(
       trancheInfo.interestSharePrice,
       tokenInfo.principalAmount
     );
 
-    uint256 interestRedeemable = maxInterestRedeemable.sub(tokenInfo.interestRedeemed);
-    uint256 principalRedeemable = maxPrincipalRedeemable.sub(tokenInfo.principalRedeemed);
+    uint256 interestRedeemable = maxInterestRedeemable - tokenInfo.interestRedeemed;
+    uint256 principalRedeemable = maxPrincipalRedeemable - tokenInfo.principalRedeemed;
 
     return (interestRedeemable, principalRedeemable);
   }
@@ -94,7 +83,6 @@ library TranchingLogic {
     return scaleByFraction(amount, slice.principalDeployed, totalDeployed);
   }
 
-  // We need to create this struct so we don't run into a stack too deep error due to too many variables
   function getSliceInfo(
     ITranchedPool.PoolSlice memory slice,
     ICreditLine creditLine,
@@ -120,19 +108,11 @@ library TranchingLogic {
     uint256 totalDeployed
   ) public view returns (uint256, uint256) {
     uint256 principalAccrued = creditLine.principalOwed();
-    // In addition to principal actually owed, we need to account for early principal payments
-    // If the borrower pays back 5K early on a 10K loan, the actual principal accrued should be
-    // 5K (balance- deployed) + 0 (principal owed)
-    principalAccrued = totalDeployed.sub(creditLine.balance()).add(principalAccrued);
-    // Now we need to scale that correctly for the slice we're interested in
+    principalAccrued = (totalDeployed - creditLine.balance()) + principalAccrued;
     principalAccrued = scaleForSlice(slice, principalAccrued, totalDeployed);
-    // Finally, we need to account for partial drawdowns. e.g. If 20K was deposited, and only 10K was drawn down,
-    // Then principal accrued should start at 10K (total deposited - principal deployed), not 0. This is because
-    // share price starts at 1, and is decremented by what was drawn down.
-    uint256 totalDeposited = slice.seniorTranche.principalDeposited.add(
-      slice.juniorTranche.principalDeposited
-    );
-    principalAccrued = totalDeposited.sub(slice.principalDeployed).add(principalAccrued);
+    uint256 totalDeposited = slice.seniorTranche.principalDeposited +
+      slice.juniorTranche.principalDeposited;
+    principalAccrued = (totalDeposited - slice.principalDeployed) + principalAccrued;
     return (slice.totalInterestAccrued, principalAccrued);
   }
 
@@ -141,21 +121,10 @@ library TranchingLogic {
     uint256 fraction,
     uint256 total
   ) public pure returns (uint256) {
-    FixedPoint.Unsigned memory totalAsFixedPoint = FixedPoint.fromUnscaledUint(total);
-    FixedPoint.Unsigned memory fractionAsFixedPoint = FixedPoint.fromUnscaledUint(fraction);
-    return fractionAsFixedPoint.div(totalAsFixedPoint).mul(amount).div(FP_SCALING_FACTOR).rawValue;
+    if (total == 0) return 0;
+    return (amount * fraction) / total;
   }
 
-  /// @notice apply a payment to all slices
-  /// @param poolSlices slices to apply to
-  /// @param numSlices number of slices
-  /// @param interest amount of interest to apply
-  /// @param principal amount of principal to apply
-  /// @param reserveFeePercent percentage that protocol will take for reserves
-  /// @param totalDeployed total amount of principal deployed
-  /// @param creditLine creditline to account for
-  /// @param juniorFeePercent percentage the junior tranche will take
-  /// @return total amount that will be sent to reserves
   function applyToAllSlices(
     mapping(uint256 => ITranchedPool.PoolSlice) storage poolSlices,
     uint256 numSlices,
@@ -166,7 +135,7 @@ library TranchingLogic {
     ICreditLine creditLine,
     uint256 juniorFeePercent
   ) external returns (uint256) {
-    ApplyResult memory result = TranchingLogic.applyToAllSeniorTranches(
+    ApplyResult memory result = applyToAllSeniorTranches(
       poolSlices,
       numSlices,
       interest,
@@ -178,8 +147,8 @@ library TranchingLogic {
     );
 
     return
-      result.reserveDeduction.add(
-        TranchingLogic.applyToAllJuniorTranches(
+      result.reserveDeduction +
+        applyToAllJuniorTranches(
           poolSlices,
           numSlices,
           result.interestRemaining,
@@ -187,8 +156,7 @@ library TranchingLogic {
           reserveFeePercent,
           totalDeployed,
           creditLine
-        )
-      );
+        );
   }
 
   function applyToAllSeniorTranches(
@@ -212,8 +180,6 @@ library TranchingLogic {
         reserveFeePercent
       );
 
-      // Since slices cannot be created when the loan is late, all interest collected can be assumed to split
-      // pro-rata across the slices. So we scale the interest and principal to the slice
       ApplyResult memory applyResult = applyToSeniorTranche(
         slice,
         scaleForSlice(slice, interest, totalDeployed),
@@ -222,15 +188,12 @@ library TranchingLogic {
         sliceInfo
       );
       emitSharePriceUpdatedEvent(slice.seniorTranche, applyResult);
-      seniorApplyResult.interestRemaining = seniorApplyResult.interestRemaining.add(
-        applyResult.interestRemaining
-      );
-      seniorApplyResult.principalRemaining = seniorApplyResult.principalRemaining.add(
-        applyResult.principalRemaining
-      );
-      seniorApplyResult.reserveDeduction = seniorApplyResult.reserveDeduction.add(
-        applyResult.reserveDeduction
-      );
+      seniorApplyResult.interestRemaining = seniorApplyResult.interestRemaining +
+        applyResult.interestRemaining;
+      seniorApplyResult.principalRemaining = seniorApplyResult.principalRemaining +
+        applyResult.principalRemaining;
+      seniorApplyResult.reserveDeduction = seniorApplyResult.reserveDeduction +
+        applyResult.reserveDeduction;
     }
     return seniorApplyResult;
   }
@@ -251,7 +214,6 @@ library TranchingLogic {
         totalDeployed,
         reserveFeePercent
       );
-      // Any remaining interest and principal is then shared pro-rata with the junior slices
       ApplyResult memory applyResult = applyToJuniorTranche(
         poolSlices[i],
         scaleForSlice(poolSlices[i], interest, totalDeployed),
@@ -259,7 +221,7 @@ library TranchingLogic {
         sliceInfo
       );
       emitSharePriceUpdatedEvent(poolSlices[i].juniorTranche, applyResult);
-      totalReserveAmount = totalReserveAmount.add(applyResult.reserveDeduction);
+      totalReserveAmount = totalReserveAmount + applyResult.reserveDeduction;
     }
     return totalReserveAmount;
   }
@@ -272,9 +234,9 @@ library TranchingLogic {
       address(this),
       tranche.id,
       tranche.principalSharePrice,
-      int256(tranche.principalSharePrice.sub(applyResult.oldPrincipalSharePrice)),
+      int256(tranche.principalSharePrice) - int256(applyResult.oldPrincipalSharePrice),
       tranche.interestSharePrice,
-      int256(tranche.interestSharePrice.sub(applyResult.oldInterestSharePrice))
+      int256(tranche.interestSharePrice) - int256(applyResult.oldInterestSharePrice)
     );
   }
 
@@ -285,8 +247,6 @@ library TranchingLogic {
     uint256 juniorFeePercent,
     SliceInfo memory sliceInfo
   ) internal returns (ApplyResult memory) {
-    // First determine the expected share price for the senior tranche. This is the gross amount the senior
-    // tranche should receive.
     uint256 expectedInterestSharePrice = calculateExpectedSharePrice(
       slice.seniorTranche,
       sliceInfo.interestAccrued,
@@ -298,22 +258,19 @@ library TranchingLogic {
       slice
     );
 
-    // Deduct the junior fee and the protocol reserve
     uint256 desiredNetInterestSharePrice = scaleByFraction(
       expectedInterestSharePrice,
-      uint256(100).sub(juniorFeePercent.add(sliceInfo.reserveFeePercent)),
-      uint256(100)
+      100 - (juniorFeePercent + sliceInfo.reserveFeePercent),
+      100
     );
-    // Collect protocol fee interest received (we've subtracted this from the senior portion above)
     uint256 reserveDeduction = scaleByFraction(
       interestRemaining,
       sliceInfo.reserveFeePercent,
-      uint256(100)
+      100
     );
-    interestRemaining = interestRemaining.sub(reserveDeduction);
+    interestRemaining = interestRemaining - reserveDeduction;
     uint256 oldInterestSharePrice = slice.seniorTranche.interestSharePrice;
     uint256 oldPrincipalSharePrice = slice.seniorTranche.principalSharePrice;
-    // Apply the interest remaining so we get up to the netInterestSharePrice
     (interestRemaining, principalRemaining) = _applyBySharePrice(
       slice.seniorTranche,
       interestRemaining,
@@ -337,10 +294,8 @@ library TranchingLogic {
     uint256 principalRemaining,
     SliceInfo memory sliceInfo
   ) public returns (ApplyResult memory) {
-    // Then fill up the junior tranche with all the interest remaining, upto the principal share price
-    uint256 expectedInterestSharePrice = slice.juniorTranche.interestSharePrice.add(
-      usdcToSharePrice(interestRemaining, slice.juniorTranche.principalDeposited)
-    );
+    uint256 expectedInterestSharePrice = slice.juniorTranche.interestSharePrice +
+      usdcToSharePrice(interestRemaining, slice.juniorTranche.principalDeposited);
     uint256 expectedPrincipalSharePrice = calculateExpectedSharePrice(
       slice.juniorTranche,
       sliceInfo.principalAccrued,
@@ -356,24 +311,20 @@ library TranchingLogic {
       expectedPrincipalSharePrice
     );
 
-    // All remaining interest and principal is applied towards the junior tranche as interest
-    interestRemaining = interestRemaining.add(principalRemaining);
-    // Since any principal remaining is treated as interest (there is "extra" interest to be distributed)
-    // we need to make sure to collect the protocol fee on the additional interest (we only deducted the
-    // fee on the original interest portion)
+    interestRemaining = interestRemaining + principalRemaining;
     uint256 reserveDeduction = scaleByFraction(
       principalRemaining,
       sliceInfo.reserveFeePercent,
-      uint256(100)
+      100
     );
-    interestRemaining = interestRemaining.sub(reserveDeduction);
+    interestRemaining = interestRemaining - reserveDeduction;
     principalRemaining = 0;
 
     (interestRemaining, principalRemaining) = _applyByAmount(
       slice.juniorTranche,
-      interestRemaining.add(principalRemaining),
+      interestRemaining + principalRemaining,
       0,
-      interestRemaining.add(principalRemaining),
+      interestRemaining + principalRemaining,
       0
     );
     return
@@ -387,7 +338,7 @@ library TranchingLogic {
   }
 
   function trancheIdToSliceIndex(uint256 trancheId) external pure returns (uint256) {
-    return trancheId.sub(1).div(NUM_TRANCHES_PER_SLICE);
+    return (trancheId - 1) / NUM_TRANCHES_PER_SLICE;
   }
 
   function initializeNextSlice(
@@ -415,26 +366,20 @@ library TranchingLogic {
   }
 
   function sliceIndexToJuniorTrancheId(uint256 sliceIndex) public pure returns (uint256) {
-    // 0 -> 2
-    // 1 -> 4
-    return sliceIndex.mul(NUM_TRANCHES_PER_SLICE).add(2);
+    return (sliceIndex * NUM_TRANCHES_PER_SLICE) + 2;
   }
 
   function sliceIndexToSeniorTrancheId(uint256 sliceIndex) public pure returns (uint256) {
-    // 0 -> 1
-    // 1 -> 3
-    return sliceIndex.mul(NUM_TRANCHES_PER_SLICE).add(1);
+    return (sliceIndex * NUM_TRANCHES_PER_SLICE) + 1;
   }
 
   function isSeniorTrancheId(uint256 trancheId) external pure returns (bool) {
-    return trancheId.mod(TranchingLogic.NUM_TRANCHES_PER_SLICE) == 1;
+    return (trancheId % TranchingLogic.NUM_TRANCHES_PER_SLICE) == 1;
   }
 
   function isJuniorTrancheId(uint256 trancheId) external pure returns (bool) {
-    return trancheId != 0 && trancheId.mod(TranchingLogic.NUM_TRANCHES_PER_SLICE) == 0;
+    return trancheId != 0 && (trancheId % TranchingLogic.NUM_TRANCHES_PER_SLICE) == 0;
   }
-
-  // // INTERNAL //////////////////////////////////////////////////////////////////
 
   function _applyToSharePrice(
     uint256 amountRemaining,
@@ -442,16 +387,14 @@ library TranchingLogic {
     uint256 desiredAmount,
     uint256 totalShares
   ) internal pure returns (uint256, uint256) {
-    // If no money left to apply, or don't need any changes, return the original amounts
     if (amountRemaining == 0 || desiredAmount == 0) {
       return (amountRemaining, currentSharePrice);
     }
     if (amountRemaining < desiredAmount) {
-      // We don't have enough money to adjust share price to the desired level. So just use whatever amount is left
       desiredAmount = amountRemaining;
     }
     uint256 sharePriceDifference = usdcToSharePrice(desiredAmount, totalShares);
-    return (amountRemaining.sub(desiredAmount), currentSharePrice.add(sharePriceDifference));
+    return (amountRemaining - desiredAmount, currentSharePrice + sharePriceDifference);
   }
 
   function _scaleByPercentOwnership(
@@ -459,9 +402,8 @@ library TranchingLogic {
     uint256 amount,
     ITranchedPool.PoolSlice memory slice
   ) internal pure returns (uint256) {
-    uint256 totalDeposited = slice.juniorTranche.principalDeposited.add(
-      slice.seniorTranche.principalDeposited
-    );
+    uint256 totalDeposited = slice.juniorTranche.principalDeposited +
+      slice.seniorTranche.principalDeposited;
     return scaleByFraction(amount, tranche.principalDeposited, totalDeposited);
   }
 
@@ -470,11 +412,10 @@ library TranchingLogic {
     uint256 actualSharePrice,
     uint256 totalShares
   ) internal pure returns (uint256) {
-    // If the desired share price is lower, then ignore it, and leave it unchanged
     if (desiredSharePrice < actualSharePrice) {
       desiredSharePrice = actualSharePrice;
     }
-    uint256 sharePriceDifference = desiredSharePrice.sub(actualSharePrice);
+    uint256 sharePriceDifference = desiredSharePrice - actualSharePrice;
     return sharePriceToUsdc(sharePriceDifference, totalShares);
   }
 
@@ -533,9 +474,6 @@ library TranchingLogic {
       );
   }
 
-  // // Events /////////////////////////////////////////////////////////////////////
-
-  // NOTE: this needs to match the event in TranchedPool
   event TrancheLocked(address indexed pool, uint256 trancheId, uint256 lockedUntil);
 
   event SharePriceUpdated(

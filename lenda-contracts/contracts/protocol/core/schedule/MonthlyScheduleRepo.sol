@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.6.12;
-pragma experimental ABIEncoderV2;
+pragma solidity ^0.8.0;
 
 import {ISchedule} from "../../../interfaces/ISchedule.sol";
 import {IMonthlyScheduleRepo} from "../../../interfaces/IMonthlyScheduleRepo.sol";
@@ -11,22 +10,17 @@ import {Schedule} from "./Schedule.sol";
 
 /**
  * @notice Repository for re-usable schedules that function on calendar month periods.
- * In general periods can be any length, but Warbler maintains a repository of schedules
- * with monthly periods because that's the most common type of schedule used on the
- * Goldfinch protocol.
  */
 contract MonthlyScheduleRepo is IMonthlyScheduleRepo {
   IPeriodMapper public immutable override periodMapper;
 
   mapping(bytes32 => address) private schedules;
 
-  constructor() public {
+  constructor() {
     periodMapper = new MonthlyPeriodMapper();
   }
 
-  /// @notice Get the schedule with the requested params. Reverts if the
-  /// schedule is not in the repo - see _createSchedule_
-  /// @return schedule the schedule
+  /// @notice Get the schedule with the requested params.
   function getSchedule(
     uint256 periodsInTerm,
     uint256 periodsPerPrincipalPeriod,
@@ -45,7 +39,6 @@ contract MonthlyScheduleRepo is IMonthlyScheduleRepo {
   }
 
   /// @notice Add a schedule with the provided params to the repo
-  /// @return schedule the schedule
   function createSchedule(
     uint256 periodsInTerm,
     uint256 periodsPerPrincipalPeriod,
@@ -83,9 +76,6 @@ contract MonthlyScheduleRepo is IMonthlyScheduleRepo {
     uint256 periodsPerInterestPeriod,
     uint256 gracePrincipalPeriods
   ) private pure returns (bytes32) {
-    // Right pad with 0 params so we have the option to add new parameters in the future
-    // Use encode instead of encodePacked because non-padded concatenation can lead to
-    // non-unique ids
     bytes memory concattedParams = abi.encode(
       periodsInTerm,
       periodsPerPrincipalPeriod,

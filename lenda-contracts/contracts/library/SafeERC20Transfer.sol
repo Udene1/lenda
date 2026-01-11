@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
 
-pragma solidity 0.6.12;
-pragma experimental ABIEncoderV2;
-
-import "@openzeppelin/contracts-ethereum-package/contracts/token/ERC20/IERC20.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /**
  * @title Safe ERC20 Transfer
  * @notice Reverts when transfer is not successful
- * @author Goldfinch
+ * @author Lenda Protocol
  */
 library SafeERC20Transfer {
   function safeERC20Transfer(

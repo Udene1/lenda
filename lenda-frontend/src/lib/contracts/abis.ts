@@ -459,6 +459,31 @@ export const SeniorPoolABI = [
         "type": "function"
     },
     {
+        "inputs": [{ "internalType": "uint256", "name": "fiduAmount", "type": "uint256" }],
+        "name": "requestWithdrawal",
+        "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [{ "internalType": "uint256", "name": "tokenId", "type": "uint256" }],
+        "name": "withdrawalRequest",
+        "outputs": [
+            {
+                "components": [
+                    { "internalType": "uint256", "name": "epochCursor", "type": "uint256" },
+                    { "internalType": "uint256", "name": "fiduRequested", "type": "uint256" },
+                    { "internalType": "uint256", "name": "usdcWithdrawable", "type": "uint256" }
+                ],
+                "internalType": "struct ISeniorPool.WithdrawalRequest",
+                "name": "",
+                "type": "tuple"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
         "anonymous": false,
         "inputs": [
             { "indexed": true, "internalType": "address", "name": "capitalProvider", "type": "address" },
@@ -730,7 +755,7 @@ export const PoolTokensABI = [
     }
 ] as const;
 
-export const GoldfinchConfigABI = [
+export const LendaConfigABI = [
     {
         "inputs": [{ "internalType": "uint256", "name": "index", "type": "uint256" }],
         "name": "getAddress",
@@ -767,7 +792,7 @@ export const GoldfinchConfigABI = [
     }
 ] as const;
 
-export const GoldfinchFactoryABI = [
+export const LendaFactoryABI = [
     {
         "inputs": [
             { "internalType": "address", "name": "_borrower", "type": "address" },
@@ -825,6 +850,118 @@ export const GoldfinchFactoryABI = [
     }
 ] as const;
 
+export const TranchedPoolABI = [
+    {
+        "inputs": [],
+        "name": "creditLine",
+        "outputs": [{ "internalType": "address", "name": "", "type": "address" }],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "numSlices",
+        "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [{ "internalType": "uint256", "name": "index", "type": "uint256" }],
+        "name": "getTranche",
+        "outputs": [
+            {
+                "components": [
+                    { "internalType": "uint256", "name": "principalDeposited", "type": "uint256" },
+                    { "internalType": "uint256", "name": "principalSharePrice", "type": "uint256" },
+                    { "internalType": "uint256", "name": "interestSharePrice", "type": "uint256" },
+                    { "internalType": "uint256", "name": "lockedUntil", "type": "uint256" },
+                    { "internalType": "uint256", "name": "id", "type": "uint256" }
+                ],
+                "internalType": "struct ITranchedPool.TrancheInfo",
+                "name": "",
+                "type": "tuple"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "createdAt",
+        "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "juniorFeePercent",
+        "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "fundableAt",
+        "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "getAllowedUIDTypes",
+        "outputs": [{ "internalType": "uint256[]", "name": "", "type": "uint256[]" }],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            { "indexed": true, "internalType": "address", "name": "pool", "type": "address" },
+            { "indexed": true, "internalType": "address", "name": "borrower", "type": "address" }
+        ],
+        "name": "PoolCreated",
+        "type": "event"
+    }
+] as const;
+
+export const CreditLineABI = [
+    {
+        "inputs": [],
+        "name": "borrower",
+        "outputs": [{ "internalType": "address", "name": "", "type": "address" }],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "limit",
+        "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "interestApr",
+        "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "balance",
+        "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "termEndTime",
+        "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+        "stateMutability": "view",
+        "type": "function"
+    }
+] as const;
+
 export const MonthlyScheduleRepoABI = [
     {
         "inputs": [
@@ -840,3 +977,86 @@ export const MonthlyScheduleRepoABI = [
     }
 ] as const;
 
+export const ERC20ABI = [
+    {
+        "inputs": [
+            { "internalType": "address", "name": "owner", "type": "address" },
+            { "internalType": "address", "name": "spender", "type": "address" }
+        ],
+        "name": "allowance",
+        "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            { "internalType": "address", "name": "spender", "type": "address" },
+            { "internalType": "uint256", "name": "amount", "type": "uint256" }
+        ],
+        "name": "approve",
+        "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [{ "internalType": "address", "name": "account", "type": "address" }],
+        "name": "balanceOf",
+        "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "decimals",
+        "outputs": [{ "internalType": "uint8", "name": "", "type": "uint8" }],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "symbol",
+        "outputs": [{ "internalType": "string", "name": "", "type": "string" }],
+        "stateMutability": "view",
+        "type": "function"
+    }
+] as const;
+
+export const MetadataRegistryABI = [
+    {
+        "inputs": [
+            { "internalType": "address", "name": "pool", "type": "address" },
+            { "internalType": "string", "name": "name", "type": "string" }
+        ],
+        "name": "setPoolName",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [{ "internalType": "address", "name": "", "type": "address" }],
+        "name": "poolNames",
+        "outputs": [{ "internalType": "string", "name": "", "type": "string" }],
+        "stateMutability": "view",
+        "type": "function"
+    }
+] as const;
+
+export const WithdrawalRequestTokenABI = [
+    {
+        "inputs": [{ "internalType": "address", "name": "owner", "type": "address" }],
+        "name": "balanceOf",
+        "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            { "internalType": "address", "name": "owner", "type": "address" },
+            { "internalType": "uint256", "name": "index", "type": "uint256" }
+        ],
+        "name": "tokenOfOwnerByIndex",
+        "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+        "stateMutability": "view",
+        "type": "function"
+    }
+] as const;

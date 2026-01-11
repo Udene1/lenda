@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.6.12;
-pragma experimental ABIEncoderV2;
+pragma solidity ^0.8.0;
 
 import {BaseUpgradeablePausable} from "./protocol/core/BaseUpgradeablePausable.sol";
-import {IUniqueIdentity0612} from "./interfaces/IUniqueIdentity0612.sol";
-import {ECDSA} from "@openzeppelin/contracts/cryptography/ECDSA.sol";
+import {IUniqueIdentity} from "./interfaces/IUniqueIdentity.sol";
+import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
-// Minimal ERC1155 Interface for storage layout compatibility if needed, 
-// but we'll build a custom non-transferable token implementation 
-// that satisfies IUniqueIdentity0612 and basic ERC1155 view functions.
-contract UniqueIdentity is IUniqueIdentity0612, BaseUpgradeablePausable {
+/**
+ * @title UniqueIdentity
+ * @notice Custom implementation of a non-transferable identity NFT for Lenda KYC/KYB.
+ * @author Lenda Protocol
+ */
+contract UniqueIdentity is IUniqueIdentity, BaseUpgradeablePausable {
     using ECDSA for bytes32;
 
     bytes32 public constant SIGNER_ROLE = keccak256("SIGNER_ROLE");
@@ -22,7 +23,7 @@ contract UniqueIdentity is IUniqueIdentity0612, BaseUpgradeablePausable {
     // Nonces for signatures to prevent replay
     mapping(address => uint256) public nonces;
 
-    // Supported ID types (Goldfinch usually uses 0-10)
+    // Supported ID types (Lenda usually uses 0-10)
     mapping(uint256 => bool) public supportedIds;
 
     event TransferSingle(address indexed operator, address indexed from, address indexed to, uint256 id, uint256 value);
@@ -37,8 +38,6 @@ contract UniqueIdentity is IUniqueIdentity0612, BaseUpgradeablePausable {
         uri = _uri;
         
         // Grant DEFAULT_ADMIN_ROLE to owner so they can manage all roles
-        _setupRole(DEFAULT_ADMIN_ROLE, owner);
-        // Set SIGNER_ROLE admin to OWNER_ROLE so owner can grant/revoke signer
         _setRoleAdmin(SIGNER_ROLE, OWNER_ROLE);
     }
 
@@ -62,7 +61,7 @@ contract UniqueIdentity is IUniqueIdentity0612, BaseUpgradeablePausable {
         require(_balances[msg.sender][id] == 0, "Already has UID");
 
         bytes32 structHash = keccak256(abi.encodePacked(msg.sender, id, expiresAt, nonces[msg.sender]));
-        bytes32 hash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", structHash));
+        bytes32 hash = ECDSA.toEthSignedMessageHash(structHash);
         
         address signer = hash.recover(signature);
         require(hasRole(SIGNER_ROLE, signer), "Invalid signer");
@@ -79,7 +78,7 @@ contract UniqueIdentity is IUniqueIdentity0612, BaseUpgradeablePausable {
      */
     function setupSigner(address signer) external onlyAdmin {
         _setRoleAdmin(SIGNER_ROLE, OWNER_ROLE);
-        _setupRole(SIGNER_ROLE, signer);
+        _grantRole(SIGNER_ROLE, signer);
     }
 
     // Burn allows a user to remove their own UID
@@ -91,7 +90,7 @@ contract UniqueIdentity is IUniqueIdentity0612, BaseUpgradeablePausable {
         emit TransferSingle(msg.sender, account, address(0), id, value);
     }
 
-    // IUniqueIdentity0612 Implementation
+    // IUniqueIdentity Implementation
     function balanceOf(address account, uint256 id) external view override returns (uint256) {
         return _balances[account][id];
     }

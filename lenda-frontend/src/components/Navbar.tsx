@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { ConnectKitButton } from "connectkit";
-import { LayoutDashboard, Waves, UserCircle, Briefcase, Zap, ShieldCheck } from "lucide-react";
+import { LayoutDashboard, Waves, UserCircle, Briefcase, Zap, ShieldCheck, TrendingUp } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
@@ -15,6 +15,7 @@ function cn(...inputs: ClassValue[]) {
 
 const navItems = [
     { name: "Dashboard", href: "/", icon: LayoutDashboard },
+    { name: "Earn", href: "/earn", icon: TrendingUp },
     { name: "Pools", href: "/pools", icon: Waves },
     { name: "Borrowers", href: "/borrowers", icon: UserCircle },
     { name: "Portfolio", href: "/portfolio", icon: Briefcase },

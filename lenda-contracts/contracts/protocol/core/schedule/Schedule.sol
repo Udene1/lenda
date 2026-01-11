@@ -1,60 +1,18 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.6.12;
-pragma experimental ABIEncoderV2;
+pragma solidity ^0.8.0;
 
 import {IPeriodMapper} from "../../../interfaces/IPeriodMapper.sol";
 import {ISchedule} from "../../../interfaces/ISchedule.sol";
 import {SafeMath} from "../../../library/SafeMath.sol";
-import {Math} from "@openzeppelin/contracts-ethereum-package/contracts/math/Math.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /**
  * @title Schedule
- * @author Warbler Labs Engineering
  * @notice A contract meant to be re-used between tranched pools to determine when payments are due
  *         using some period mapper contract that maps timestamps to real world concepts of time (months).
- *         This contract allows a user to specify how often interest payments and principal payments should come
- *         due by allowing the creator to specify the length of of interest periods and principal periods. Additionally
- *         the creator can specify how many of the principal periods are considered "grace periods"
- *
- * Example:
- * Here's a visualization of a schedule with the following parameters
- * periodMapper = monthly periods
- * periodsInTerm = 12 (1 year)
- * periodsPerInterestPeriod = 3 (quarterly)
- * periodsPerPrincipalPeriod = 6 (halfly)
- * gracePrincipalPeriods = 1
- *
- *                       +- Stub Period     +- Principal Grace Period
- *  grace periods        v                  v
- *                     +---+-----------------------+-----------------------+
- *  principal periods  |///|=======================|           0           |
- *                     |///+-----------+-----------+-----------+-----------+ E
- *  interest periods   |///|     0     |     1     |     2     |     3     | N
- *                     +---+---+---+---+---+---+---+---+---+---+---+---+---+ D
- *  periods            |FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC|JAN|FEB|
- *                     |   | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10| 11|
- *                  ---+---+---+---+---+---+---+---+---+---+---+---+---+---+---
- *  absolute        ...| 25| 26| 27| 28| 29| 30| 31| 32| 33| 34| 35| 36| 37|...
- *  periods            |   |   |   |   |   |   |   |   |   |   |   |   |   |
- *                  ---+---+---+---+---+---+---+---+---+---+---+---+---+---+---
- *                      ^
- *                      +- start time
- * When a borrower draws down, a "stub period" is created. This period is the remainder of the
- * period they drew down in, but at the end of this period no payment of any kind should be due.
- * We treat this stub period as an extension to period 0.
- *
- * At the end of each interest or principal period a payment is expected. For example
- * imagine today is Oct 10th. Your next interest payment will be the beginning of December
- * because the current interest period, period 2, ends in december. Your next principal payment
- * will be due at the end of February because the current principal period, period 0, ends in
- * February. This is also the end of the loan, and so all interest and principal should be due
- * at this time.
- *
- * @dev Because this contract is meant to be re-used between contracts, the "start time" is not stored on this contract
- *      Instead, it's passed in to each function call.
+ * @author Lenda Protocol
  */
 contract Schedule is ISchedule {
-  using Math for uint256;
   using SafeMath for uint256;
 
   /// @notice the payment date schedule
@@ -74,24 +32,22 @@ contract Schedule is ISchedule {
   /// @notice the number of principal periods where no principal will be due
   uint256 public immutable override gracePrincipalPeriods;
 
-  //===============================================================================
-  // external functions
-  //===============================================================================
-
-  /// @param _periodMapper contract that maps timestamps to periods
-  /// @param _periodsInTerm the number of periods in the term of the loan
-  /// @param _periodsPerPrincipalPeriod the number of payment periods that need to pass before principal
-  ///         comes due
-  /// @param _periodsPerInterestPeriod the number of payment periods that need to pass before interest
-  ///         comes due.
-  /// @param _gracePrincipalPeriods principal periods where principal will not be due
+  /**
+   * @param _periodMapper contract that maps timestamps to periods
+   * @param _periodsInTerm the number of periods in the term of the loan
+   * @param _periodsPerPrincipalPeriod the number of payment periods that need to pass before principal
+   *         comes due
+   * @param _periodsPerInterestPeriod the number of payment periods that need to pass before interest
+   *         comes due.
+   * @param _gracePrincipalPeriods principal periods where principal will not be due
+   */
   constructor(
     IPeriodMapper _periodMapper,
     uint256 _periodsInTerm,
     uint256 _periodsPerPrincipalPeriod,
     uint256 _periodsPerInterestPeriod,
     uint256 _gracePrincipalPeriods
-  ) public {
+  ) {
     require(address(_periodMapper) != address(0), "Z");
 
     require(_periodsInTerm > 0, "Z");
@@ -116,8 +72,7 @@ contract Schedule is ISchedule {
     uint256 startTime,
     uint256 timestamp
   ) public view override returns (uint256) {
-    return
-      Math.min(_periodToInterestPeriod(periodAt(startTime, timestamp)), totalInterestPeriods());
+    return Math.min(_periodToInterestPeriod(periodAt(startTime, timestamp)), totalInterestPeriods());
   }
 
   /// @inheritdoc ISchedule
@@ -133,8 +88,7 @@ contract Schedule is ISchedule {
     uint256 startTime,
     uint256 timestamp
   ) public view override returns (uint256) {
-    return
-      Math.min(_periodToPrincipalPeriod(periodAt(startTime, timestamp)), totalPrincipalPeriods());
+    return Math.min(_periodToPrincipalPeriod(periodAt(startTime, timestamp)), totalPrincipalPeriods());
   }
 
   /// @inheritdoc ISchedule
@@ -145,7 +99,7 @@ contract Schedule is ISchedule {
     return
       timestamp < startTime ||
       (timestamp >= startTime &&
-        periodAt(startTime, timestamp).div(periodsPerPrincipalPeriod) < gracePrincipalPeriods);
+        (periodAt(startTime, timestamp) / periodsPerPrincipalPeriod) < gracePrincipalPeriods);
   }
 
   /// @inheritdoc ISchedule
@@ -174,13 +128,12 @@ contract Schedule is ISchedule {
 
   /// @inheritdoc ISchedule
   function totalPrincipalPeriods() public view override returns (uint256) {
-    // To make amortization math easy, we want to exclude grace periods from this
-    return periodsInTerm.div(periodsPerPrincipalPeriod).sub(gracePrincipalPeriods);
+    return (periodsInTerm / periodsPerPrincipalPeriod) - gracePrincipalPeriods;
   }
 
   /// @inheritdoc ISchedule
   function totalInterestPeriods() public view override returns (uint256) {
-    return periodsInTerm.div(periodsPerInterestPeriod);
+    return periodsInTerm / periodsPerInterestPeriod;
   }
 
   /// @inheritdoc ISchedule
@@ -200,7 +153,7 @@ contract Schedule is ISchedule {
     uint256 startTime,
     uint256 timestamp
   ) public view override returns (uint256) {
-    uint interestPeriod = interestPeriodAt(startTime, timestamp);
+    uint256 interestPeriod = interestPeriodAt(startTime, timestamp);
     return interestPeriod > 0 ? _startOfInterestPeriod(startTime, interestPeriod) : 0;
   }
 
@@ -209,7 +162,7 @@ contract Schedule is ISchedule {
     uint256 startTime,
     uint256 timestamp
   ) public view override returns (uint256) {
-    uint principalPeriod = principalPeriodAt(startTime, timestamp);
+    uint256 principalPeriod = principalPeriodAt(startTime, timestamp);
     return principalPeriod > 0 ? _startOfPrincipalPeriod(startTime, principalPeriod) : 0;
   }
 
@@ -220,7 +173,7 @@ contract Schedule is ISchedule {
   ) public view override returns (uint256) {
     uint256 nextPrincipalPeriod = Math.min(
       totalPrincipalPeriods(),
-      principalPeriodAt(startTime, timestamp).add(1)
+      principalPeriodAt(startTime, timestamp) + 1
     );
     return _startOfPrincipalPeriod(startTime, nextPrincipalPeriod);
   }
@@ -232,7 +185,7 @@ contract Schedule is ISchedule {
   ) public view override returns (uint256) {
     uint256 nextInterestPeriod = Math.min(
       totalInterestPeriods(),
-      interestPeriodAt(startTime, timestamp).add(1)
+      interestPeriodAt(startTime, timestamp) + 1
     );
     return _startOfInterestPeriod(startTime, nextInterestPeriod);
   }
@@ -247,61 +200,43 @@ contract Schedule is ISchedule {
   // Internal functions
   //===============================================================================
 
-  /// @notice Returns the absolute period that the terms will end in, accounting
-  ///           for the stub period
   function _termEndAbsolutePeriod(uint256 startTime) internal view returns (uint256) {
-    return _termStartAbsolutePeriod(startTime).add(periodsInTerm);
+    return _termStartAbsolutePeriod(startTime) + periodsInTerm;
   }
 
-  /// @notice Returns the absolute period that the terms started in, accounting
-  ///           for the stub period
   function _termStartAbsolutePeriod(uint256 startTime) internal view returns (uint256) {
-    // We add one here so that a "stub period" is created. Example: Imagine
-    // a the borrower draws down in the 15th of Jan. It would be incorrect for them
-    // to make a payment on Feb 1, as it would not be a full payment period. Instead
-    // we count the first 15 days as an extension on the first period, or a "stub period"
-    return periodMapper.periodOf(startTime).add(1);
+    return periodMapper.periodOf(startTime) + 1;
   }
 
-  /// @notice Convert a period to a principal period
   function _periodToPrincipalPeriod(uint256 p) internal view returns (uint256) {
-    // To make amortization math easy, we want to make it so that the "0th" principal
-    // period is the first non-grace principal period.
-    return p.div(periodsPerPrincipalPeriod).saturatingSub(gracePrincipalPeriods);
+    return (p / periodsPerPrincipalPeriod).saturatingSub(gracePrincipalPeriods);
   }
 
-  /// @notice Convert a period to an interest period
   function _periodToInterestPeriod(uint256 p) internal view returns (uint256) {
-    return p.div(periodsPerInterestPeriod);
+    return p / periodsPerInterestPeriod;
   }
 
-  /// @notice Convert an interest period to a normal period
   function _interestPeriodToPeriod(uint256 p) internal view returns (uint256) {
-    return p.mul(periodsPerInterestPeriod);
+    return p * periodsPerInterestPeriod;
   }
 
-  /// @notice Convert a principal period to a normal period
   function _principalPeriodToPeriod(uint256 p) internal view returns (uint256) {
-    return p.mul(periodsPerPrincipalPeriod);
+    return p * periodsPerPrincipalPeriod;
   }
 
-  /// @notice Convert a period to an absolute period. An absolute period is relative to
-  ///   the beginning of time rather than being relative to the start time
   function _periodToAbsolutePeriod(uint256 startTime, uint256 p) internal view returns (uint256) {
-    return _termStartAbsolutePeriod(startTime).add(p);
+    return _termStartAbsolutePeriod(startTime) + p;
   }
 
-  /// @notice Returns the starting timestamp of a principal period
   function _startOfPrincipalPeriod(
     uint256 startTime,
     uint256 principalPeriod
   ) internal view returns (uint256) {
-    uint256 period = _principalPeriodToPeriod(principalPeriod.add(gracePrincipalPeriods));
+    uint256 period = _principalPeriodToPeriod(principalPeriod + gracePrincipalPeriods);
     uint256 absPeriod = _periodToAbsolutePeriod(startTime, period);
     return periodMapper.startOf(absPeriod);
   }
 
-  /// @notice Returns the starting timestamp of an interest period
   function _startOfInterestPeriod(
     uint256 startTime,
     uint256 interestPeriod

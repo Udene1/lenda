@@ -12,54 +12,25 @@ import {
     Filter,
     BarChart2
 } from "lucide-react";
+import { usePools } from "@/hooks/usePools";
+import { Loader2 } from "lucide-react";
 import Link from "next/link";
 
-const POOLS = [
-    {
-        id: "1",
-        name: "Lenda Core Institutional Pool",
-        borrower: "Goldman Credit Group",
-        borrowerAddress: "0x123...456",
-        status: "Active",
-        apy: "8.5%",
-        term: "12 Months",
-        capacity: "$10,000,000",
-        filled: "$4,200,000",
-        progress: 42,
-        type: "Senior Tranche",
-        verified: true
-    },
-    {
-        id: "2",
-        name: "Emerging Markets Credit Fund",
-        borrower: "Capital Horizon",
-        borrowerAddress: "0x789...abc",
-        status: "Coming Soon",
-        apy: "12.0%",
-        term: "24 Months",
-        capacity: "$5,000,000",
-        filled: "$0",
-        progress: 0,
-        type: "Mezzanine Tranche",
-        verified: true
-    },
-    {
-        id: "3",
-        name: "SME Working Capital Pool",
-        borrower: "Direct Finance Ltd",
-        borrowerAddress: "0xdef...012",
-        status: "Filled",
-        apy: "9.2%",
-        term: "6 Months",
-        capacity: "$2,500,000",
-        filled: "$2,500,000",
-        progress: 100,
-        type: "Senior Tranche",
-        verified: false
-    }
-];
-
 export default function PoolsPage() {
+    const { pools, isLoading } = usePools();
+
+    if (isLoading) {
+        return (
+            <main className="min-h-screen">
+                <Navbar />
+                <div className="mesh-gradient opacity-30" />
+                <div className="pt-40 flex flex-col items-center justify-center">
+                    <Loader2 className="w-12 h-12 text-blue-500 animate-spin mb-4" />
+                    <h2 className="text-xl font-bold italic uppercase">Loading Opportunities...</h2>
+                </div>
+            </main>
+        );
+    }
     return (
         <main className="min-h-screen pb-20">
             <Navbar />
@@ -103,73 +74,80 @@ export default function PoolsPage() {
 
                 {/* Pools Grid */}
                 <div className="grid lg:grid-cols-2 xl:grid-cols-3 gap-8">
-                    {POOLS.map((pool, i) => (
-                        <motion.div
-                            key={pool.id}
-                            initial={{ opacity: 0, y: 20 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: i * 0.1 }}
-                            className="card group hover:scale-[1.01] transition-all duration-300"
-                        >
-                            <div className="flex items-start justify-between mb-6">
-                                <div className="flex items-center gap-2">
-                                    <div className={`w-2 h-2 rounded-full ${pool.status === 'Active' ? 'bg-emerald-500 animate-pulse' : pool.status === 'Filled' ? 'bg-blue-500' : 'bg-slate-500'}`} />
-                                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">{pool.status}</span>
-                                </div>
-                                {pool.verified && (
-                                    <div className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-500 flex items-center gap-1 bg-emerald-500/5 px-2 py-1 rounded-md border border-emerald-500/10">
-                                        <ShieldCheck className="w-3 h-3" /> Lenda Verified
+                    {pools.length > 0 ? (
+                        pools.map((pool, i) => (
+                            <motion.div
+                                key={pool.id}
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: i * 0.1 }}
+                                className="card group hover:scale-[1.01] transition-all duration-300"
+                            >
+                                <div className="flex items-start justify-between mb-6">
+                                    <div className="flex items-center gap-2">
+                                        <div className={`w-2 h-2 rounded-full ${pool.status === 'Active' ? 'bg-emerald-500 animate-pulse' : pool.status === 'Filled' ? 'bg-blue-500' : 'bg-slate-500'}`} />
+                                        <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">{pool.status}</span>
                                     </div>
-                                )}
-                            </div>
+                                    {pool.verified && (
+                                        <div className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-500 flex items-center gap-1 bg-emerald-500/5 px-2 py-1 rounded-md border border-emerald-500/10">
+                                            <ShieldCheck className="w-3 h-3" /> Lenda Verified
+                                        </div>
+                                    )}
+                                </div>
 
-                            <h3 className="text-xl font-bold text-white mb-2 leading-tight group-hover:text-blue-400 transition-colors">{pool.name}</h3>
-                            <div className="flex items-center gap-2 text-xs text-slate-500 font-bold uppercase tracking-widest mb-6">
-                                <Users className="w-3.5 h-3.5" /> {pool.borrower}
-                            </div>
+                                <h3 className="text-xl font-bold text-white mb-2 leading-tight group-hover:text-blue-400 transition-colors">{pool.name}</h3>
+                                <div className="flex items-center gap-2 text-xs text-slate-500 font-bold uppercase tracking-widest mb-6">
+                                    <Users className="w-3.5 h-3.5" /> {pool.borrower}
+                                </div>
 
-                            <div className="grid grid-cols-2 gap-4 mb-8">
-                                <div className="p-3 rounded-2xl bg-white/[0.02] border border-white/5">
-                                    <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1 flex items-center gap-1">
-                                        <TrendingUp className="w-3 h-3" /> Est. APY
+                                <div className="grid grid-cols-2 gap-4 mb-8">
+                                    <div className="p-3 rounded-2xl bg-white/[0.02] border border-white/5">
+                                        <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1 flex items-center gap-1">
+                                            <TrendingUp className="w-3 h-3" /> Est. APY
+                                        </div>
+                                        <div className="text-xl font-bold text-emerald-400">{pool.apy}</div>
                                     </div>
-                                    <div className="text-xl font-bold text-emerald-400">{pool.apy}</div>
-                                </div>
-                                <div className="p-3 rounded-2xl bg-white/[0.02] border border-white/5">
-                                    <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1 flex items-center gap-1">
-                                        <Clock className="w-3 h-3" /> Term
+                                    <div className="p-3 rounded-2xl bg-white/[0.02] border border-white/5">
+                                        <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1 flex items-center gap-1">
+                                            <Clock className="w-3 h-3" /> Term
+                                        </div>
+                                        <div className="text-xl font-bold text-white">{pool.term}</div>
                                     </div>
-                                    <div className="text-xl font-bold text-white">{pool.term}</div>
                                 </div>
-                            </div>
 
-                            <div className="space-y-2 mb-8">
-                                <div className="flex justify-between text-[10px] font-black uppercase tracking-widest">
-                                    <span className="text-slate-500">Progress</span>
-                                    <span className="text-white">{pool.filled} / {pool.capacity}</span>
+                                <div className="space-y-2 mb-8">
+                                    <div className="flex justify-between text-[10px] font-black uppercase tracking-widest">
+                                        <span className="text-slate-500">Progress</span>
+                                        <span className="text-white">{pool.filled} / {pool.capacity}</span>
+                                    </div>
+                                    <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
+                                        <motion.div
+                                            initial={{ width: 0 }}
+                                            animate={{ width: `${pool.progress}%` }}
+                                            transition={{ duration: 1, delay: 0.5 }}
+                                            className="h-full bg-blue-600 rounded-full shadow-[0_0_10px_rgba(37,99,235,0.5)]"
+                                        />
+                                    </div>
                                 </div>
-                                <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
-                                    <motion.div
-                                        initial={{ width: 0 }}
-                                        animate={{ width: `${pool.progress}%` }}
-                                        transition={{ duration: 1, delay: 0.5 }}
-                                        className="h-full bg-blue-600 rounded-full shadow-[0_0_10px_rgba(37,99,235,0.5)]"
-                                    />
-                                </div>
-                            </div>
 
-                            <Link
-                                href={`/pools/${pool.id}`}
-                                className={`flex items-center justify-center gap-2 w-full py-4 rounded-2xl font-bold uppercase text-xs tracking-[0.2em] transition-all transform active:scale-95 ${pool.status === 'Active'
+                                <Link
+                                    href={`/pools/${pool.id}`}
+                                    className={`flex items-center justify-center gap-2 w-full py-4 rounded-2xl font-bold uppercase text-xs tracking-[0.2em] transition-all transform active:scale-95 ${pool.status === 'Active'
                                         ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20'
                                         : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-white/5'
-                                    }`}
-                            >
-                                {pool.status === 'Active' ? 'Supply Liquidity' : pool.status === 'Filled' ? 'Pool Filled' : 'View Details'}
-                                {pool.status === 'Active' && <ArrowUpRight className="w-4 h-4" />}
-                            </Link>
-                        </motion.div>
-                    ))}
+                                        }`}
+                                >
+                                    {pool.status === 'Active' ? 'Supply Liquidity' : pool.status === 'Filled' ? 'Pool Filled' : 'View Details'}
+                                    {pool.status === 'Active' && <ArrowUpRight className="w-4 h-4" />}
+                                </Link>
+                            </motion.div>
+                        ))
+                    ) : (
+                        <div className="col-span-full py-20 text-center glass rounded-3xl border border-white/5">
+                            <h3 className="text-xl font-bold text-white mb-2 italic uppercase">No Pools Available</h3>
+                            <p className="text-slate-500 text-sm font-medium">There are currently no active lending pools. Please check back later.</p>
+                        </div>
+                    )}
                 </div>
 
                 {/* Global Stats Banner */}

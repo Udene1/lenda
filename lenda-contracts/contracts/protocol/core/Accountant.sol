@@ -1,24 +1,18 @@
 // SPDX-License-Identifier: MIT
-
-pragma solidity 0.6.12;
-pragma experimental ABIEncoderV2;
+pragma solidity ^0.8.0;
 
 import {ICreditLine} from "../../interfaces/ICreditLine.sol";
 import {ILoan} from "../../interfaces/ILoan.sol";
-
 import {ITranchedPool} from "../../interfaces/ITranchedPool.sol";
 import {FixedPoint} from "../../external/FixedPoint.sol";
-import {SafeMath} from "../../library/SafeMath.sol";
-import {Math} from "@openzeppelin/contracts-ethereum-package/contracts/math/Math.sol";
 
 /**
  * @title The Accountant
  * @notice Library for handling key financial calculations, such as interest and principal accrual.
- * @author Goldfinch
+ * @author Lenda Protocol
  */
 
 library Accountant {
-  using SafeMath for uint256;
   using FixedPoint for FixedPoint.Signed;
   using FixedPoint for FixedPoint.Unsigned;
   using FixedPoint for int256;
@@ -58,7 +52,7 @@ library Accountant {
     uint256 maxDaysLate
   ) public view returns (uint256, uint256) {
     FixedPoint.Unsigned memory amountOwedPerDay = calculateAmountOwedForOneDay(cl);
-    if (amountOwedPerDay.isEqual(0)) {
+    if (amountOwedPerDay.rawValue == 0) {
       return (0, 0);
     }
     FixedPoint.Unsigned memory fpGracePeriod = FixedPoint.fromUnscaledUint(gracePeriodInDays);
@@ -68,10 +62,10 @@ library Accountant {
     // Before the term end date, we use the interestOwed to calculate the periods late. However, after the loan term
     // has ended, since the interest is a much smaller fraction of the principal, we cannot reliably use interest to
     // calculate the periods later.
-    uint256 totalOwed = cl.interestOwed().add(cl.principalOwed());
+    uint256 totalOwed = cl.interestOwed() + cl.principalOwed();
     daysLate = FixedPoint.fromUnscaledUint(totalOwed).div(amountOwedPerDay);
     if (timestamp > cl.termEndTime()) {
-      uint256 secondsLate = timestamp.sub(cl.termEndTime());
+      uint256 secondsLate = timestamp - cl.termEndTime();
       daysLate = daysLate.add(FixedPoint.fromUnscaledUint(secondsLate).div(SECONDS_PER_DAY));
     }
 
@@ -99,7 +93,7 @@ library Accountant {
     ICreditLine cl
   ) public view returns (FixedPoint.Unsigned memory) {
     // Determine theoretical interestOwed for one full day
-    uint256 totalInterestPerYear = cl.balance().mul(cl.interestApr()).div(INTEREST_DECIMALS);
+    uint256 totalInterestPerYear = (cl.balance() * cl.interestApr()) / INTEREST_DECIMALS;
     FixedPoint.Unsigned memory interestOwedForOneDay = FixedPoint
       .fromUnscaledUint(totalInterestPerYear)
       .div(365);
@@ -116,22 +110,22 @@ library Accountant {
     uint256 interestOwed,
     uint256 interestAccrued,
     uint256 principalOwed
-  ) external pure returns (uint interestPayment, uint principalPayment) {
-    uint owedInterestPayment = Math.min(interestOwed, paymentAmount);
-    paymentAmount = paymentAmount.sub(owedInterestPayment);
+  ) external pure returns (uint256 interestPayment, uint256 principalPayment) {
+    uint256 owedInterestPayment = paymentAmount < interestOwed ? paymentAmount : interestOwed;
+    paymentAmount = paymentAmount - owedInterestPayment;
 
-    uint owedPrincipalPayment = Math.min(principalOwed, paymentAmount);
-    paymentAmount = paymentAmount.sub(owedPrincipalPayment);
+    uint256 owedPrincipalPayment = paymentAmount < principalOwed ? paymentAmount : principalOwed;
+    paymentAmount = paymentAmount - owedPrincipalPayment;
 
-    uint accruedInterestPayment = Math.min(interestAccrued, paymentAmount);
-    paymentAmount = paymentAmount.sub(accruedInterestPayment);
+    uint256 accruedInterestPayment = paymentAmount < interestAccrued ? paymentAmount : interestAccrued;
+    paymentAmount = paymentAmount - accruedInterestPayment;
 
-    uint balanceRemaining = balance.sub(owedPrincipalPayment);
-    uint additionalBalancePayment = Math.min(balanceRemaining, paymentAmount);
+    uint256 balanceRemaining = balance - owedPrincipalPayment;
+    uint256 additionalBalancePayment = paymentAmount < balanceRemaining ? paymentAmount : balanceRemaining;
 
     return (
-      owedInterestPayment.add(accruedInterestPayment),
-      owedPrincipalPayment.add(additionalBalancePayment)
+      owedInterestPayment + accruedInterestPayment,
+      owedPrincipalPayment + additionalBalancePayment
     );
   }
 
@@ -149,7 +143,7 @@ library Accountant {
    */
   function allocatePayment(
     AllocatePaymentParams memory params
-  ) public pure returns (ITranchedPool.PaymentAllocation memory) {
+  ) public pure returns (ILoan.PaymentAllocation memory) {
     require(params.principalPayment > 0 || params.interestPayment > 0, "ZZ");
 
     uint256 remainingPrincipalPayment = params.principalPayment;
@@ -158,16 +152,16 @@ library Accountant {
     // The payment waterfall works like this:
 
     // 1. Any interest that is _currently_ owed must be paid
-    uint owedInterestPayment = Math.min(params.interestOwed, remainingInterestPayment);
-    remainingInterestPayment = remainingInterestPayment.sub(owedInterestPayment);
+    uint256 owedInterestPayment = remainingInterestPayment < params.interestOwed ? remainingInterestPayment : params.interestOwed;
+    remainingInterestPayment = remainingInterestPayment - owedInterestPayment;
 
     // 2. Any principal that is _currently_ owed must be paid
     // If you still owe interest then you can't pay back principal or pay down balance
     if (owedInterestPayment < params.interestOwed && params.principalPayment > 0) {
       revert("IO");
     }
-    uint owedPrincipalPayment = Math.min(remainingPrincipalPayment, params.principalOwed);
-    remainingPrincipalPayment = remainingPrincipalPayment.sub(owedPrincipalPayment);
+    uint256 owedPrincipalPayment = remainingPrincipalPayment < params.principalOwed ? remainingPrincipalPayment : params.principalOwed;
+    remainingPrincipalPayment = remainingPrincipalPayment - owedPrincipalPayment;
 
     // 3. Any accured interest, meaning any interest that has accrued since the last payment
     //    date but isn't actually currently owed must be paid
@@ -179,25 +173,25 @@ library Accountant {
     ) {
       revert("PO");
     }
-    uint accruedInterestPayment = Math.min(remainingInterestPayment, params.interestAccrued);
-    remainingInterestPayment = remainingInterestPayment.sub(accruedInterestPayment);
+    uint256 accruedInterestPayment = remainingInterestPayment < params.interestAccrued ? remainingInterestPayment : params.interestAccrued;
+    remainingInterestPayment = remainingInterestPayment - accruedInterestPayment;
 
     // 4. If there's remaining principal payment, it can be applied to remaining balance
     // But if you still have additional interest then you can't pay back balance
     if (
       accruedInterestPayment < params.interestAccrued &&
       remainingPrincipalPayment > 0 &&
-      params.balance.sub(owedPrincipalPayment) > 0
+      params.balance - owedPrincipalPayment > 0
     ) {
       revert("AI");
     }
 
-    uint balanceRemaining = params.balance.sub(owedPrincipalPayment);
-    uint additionalBalancePayment = Math.min(balanceRemaining, remainingPrincipalPayment);
-    remainingPrincipalPayment = remainingPrincipalPayment.sub(additionalBalancePayment);
+    uint256 balanceRemaining = params.balance - owedPrincipalPayment;
+    uint256 additionalBalancePayment = remainingPrincipalPayment < balanceRemaining ? remainingPrincipalPayment : balanceRemaining;
+    remainingPrincipalPayment = remainingPrincipalPayment - additionalBalancePayment;
 
     // 5. Any remaining payment is not applied
-    uint paymentRemaining = remainingPrincipalPayment.add(remainingInterestPayment);
+    uint256 paymentRemaining = remainingPrincipalPayment + remainingInterestPayment;
 
     return
       ILoan.PaymentAllocation({

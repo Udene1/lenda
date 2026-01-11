@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: MIT
-pragma solidity >=0.6.12;
-pragma experimental ABIEncoderV2;
+pragma solidity ^0.8.0;
 
-import "./openzeppelin/IERC721.sol";
+import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import {IERC20withDec} from "./IERC20withDec.sol";
 
-import "../interfaces/IERC20withDec.sol";
-
+/**
+ * @title ICommunityRewards
+ * @notice Interface for the CommunityRewards contract in the Lenda protocol.
+ * @author Lenda Protocol
+ */
 interface ICommunityRewards is IERC721 {
   function rewardsToken() external view returns (IERC20withDec);
 

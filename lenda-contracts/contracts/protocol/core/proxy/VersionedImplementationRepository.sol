@@ -1,29 +1,27 @@
 // SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
 
-pragma solidity 0.6.12;
-pragma experimental ABIEncoderV2;
 import {IVersioned} from "../../../interfaces/IVersioned.sol";
 import {IVersionedImplementationRepository} from "../../../interfaces/IVersionedImplementationRepository.sol";
-
 import {ImplementationRepository as Repo} from "./ImplementationRepository.sol";
 
+/**
+ * @title VersionedImplementationRepository
+ * @notice Repository for implementations tagged with versions.
+ * @author Lenda Protocol
+ */
 contract VersionedImplementationRepository is Repo, IVersionedImplementationRepository {
-  /// @dev abi encoded version -> implementation address
-  /// @dev we use bytes here so only a single storage slot is used
+  /// @dev Packed version [major, minor, patch] -> implementation address
   mapping(bytes => address) internal _byVersion;
 
   // // EXTERNAL //////////////////////////////////////////////////////////////////
 
-  /// @notice get an implementation by a version tag
-  /// @param version `[major, minor, patch]` version tag
-  /// @return implementation associated with the given version tag
+  /// @inheritdoc IVersionedImplementationRepository
   function getByVersion(uint8[3] calldata version) external view override returns (address) {
     return _byVersion[abi.encodePacked(version)];
   }
 
-  /// @notice check if a version exists
-  /// @param version `[major, minor, patch]` version tag
-  /// @return true if the version is registered
+  /// @inheritdoc IVersionedImplementationRepository
   function hasVersion(uint8[3] calldata version) external view override returns (bool) {
     return _hasVersion(version);
   }
@@ -33,20 +31,19 @@ contract VersionedImplementationRepository is Repo, IVersionedImplementationRepo
   function _append(address implementation, uint256 lineageId) internal override {
     uint8[3] memory version = IVersioned(implementation).getVersion();
     _insertVersion(version, implementation);
-    return super._append(implementation, lineageId);
+    super._append(implementation, lineageId);
   }
 
   function _createLineage(address implementation) internal override returns (uint256) {
     uint8[3] memory version = IVersioned(implementation).getVersion();
     _insertVersion(version, implementation);
-    uint256 lineageId = super._createLineage(implementation);
-    return lineageId;
+    return super._createLineage(implementation);
   }
 
   function _remove(address toRemove, address previous) internal override {
     uint8[3] memory version = IVersioned(toRemove).getVersion();
     _removeVersion(version);
-    return super._remove(toRemove, previous);
+    super._remove(toRemove, previous);
   }
 
   function _insertVersion(uint8[3] memory version, address impl) internal {
@@ -56,7 +53,7 @@ contract VersionedImplementationRepository is Repo, IVersionedImplementationRepo
   }
 
   function _removeVersion(uint8[3] memory version) internal {
-    address toRemove = _byVersion[abi.encode(version)];
+    address toRemove = _byVersion[abi.encodePacked(version)];
     _byVersion[abi.encodePacked(version)] = INVALID_IMPL;
     emit VersionRemoved(version, toRemove);
   }

@@ -16,43 +16,53 @@ import {
     Info
 } from "lucide-react";
 import Link from "next/link";
+import { usePools } from "@/hooks/usePools";
+import { Loader2 } from "lucide-react";
 import { useAccount } from "wagmi";
 import { ConnectKitButton } from "connectkit";
-
-// Mock data replicating the list from the main pools page
-const POOLS = {
-    "1": {
-        id: "1",
-        name: "Lenda Core Institutional Pool",
-        borrower: "Goldman Credit Group",
-        description: "Senior secured lending to investment grade institutions. This pool focuses on providing liquidity to established financial entities with strong credit ratings.",
-        status: "Active",
-        apy: "8.5%",
-        term: "12 Months",
-        capacity: 10000000,
-        filled: 4200000,
-        minInvestment: "$5,000",
-        type: "Senior Tranche",
-        riskRating: "A+",
-        verified: true,
-        documents: [
-            { name: "Pool Mechanics", date: "Dec 12, 2024" },
-            { name: "Risk Assessment", date: "Dec 10, 2024" },
-            { name: "Borrower Financials", date: "Nov 28, 2024" }
-        ]
-    },
-    // Adding other mock pools if needed for routing, but focusing on ID 1 for now
-};
 
 export default function PoolDetailPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params);
     const { isConnected } = useAccount();
     const [amount, setAmount] = useState("");
+    const { pools, isLoading } = usePools();
 
-    // Fallback if pool not found, or use the mock data
-    const pool = POOLS[id as keyof typeof POOLS] || POOLS["1"];
+    // Find the specific pool
+    const pool = pools.find(p => p.id.toLowerCase() === (id as string).toLowerCase());
 
-    const progress = (pool.filled / pool.capacity) * 100;
+    if (isLoading) {
+        return (
+            <main className="min-h-screen">
+                <Navbar />
+                <div className="mesh-gradient opacity-30" />
+                <div className="pt-40 flex flex-col items-center justify-center">
+                    <Loader2 className="w-12 h-12 text-blue-500 animate-spin mb-4" />
+                    <h2 className="text-xl font-bold italic uppercase">Loading Pool Details...</h2>
+                </div>
+            </main>
+        );
+    }
+
+    if (!pool) {
+        return (
+            <main className="min-h-screen">
+                <Navbar />
+                <div className="mesh-gradient opacity-30" />
+                <div className="pt-40 flex flex-col items-center justify-center px-6">
+                    <div className="card max-w-md w-full text-center">
+                        <AlertCircle className="w-16 h-16 text-blue-500 mx-auto mb-6" />
+                        <h1 className="text-3xl font-bold mb-4 italic uppercase">Pool Not Found</h1>
+                        <p className="text-slate-400 mb-8">The lending pool you are looking for does not exist or has been removed.</p>
+                        <Link href="/pools" className="btn-primary inline-block px-8 py-3">
+                            Back to Pools
+                        </Link>
+                    </div>
+                </div>
+            </main>
+        );
+    }
+
+    const progress = pool.progress || 0;
 
     return (
         <main className="min-h-screen pb-20">
@@ -82,8 +92,8 @@ export default function PoolDetailPage({ params }: { params: Promise<{ id: strin
                                             </div>
                                         )}
                                         <div className={`px-2 py-1 rounded-md border text-[10px] font-black uppercase tracking-widest ${pool.status === 'Active'
-                                                ? 'bg-blue-500/10 border-blue-500/20 text-blue-400'
-                                                : 'bg-slate-500/10 border-slate-500/20 text-slate-400'
+                                            ? 'bg-blue-500/10 border-blue-500/20 text-blue-400'
+                                            : 'bg-slate-500/10 border-slate-500/20 text-slate-400'
                                             }`}>
                                             {pool.status}
                                         </div>
@@ -166,7 +176,7 @@ export default function PoolDetailPage({ params }: { params: Promise<{ id: strin
                             >
                                 <h3 className="text-sm font-bold uppercase tracking-widest text-slate-400 mb-6">Due Diligence</h3>
                                 <div className="space-y-3">
-                                    {pool.documents.map((doc, i) => (
+                                    {pool.documents.map((doc: any, i: number) => (
                                         <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-white/5 hover:bg-white/10 transition-colors cursor-pointer group">
                                             <div className="flex items-center gap-3">
                                                 <FileText className="w-4 h-4 text-blue-500" />
@@ -227,7 +237,7 @@ export default function PoolDetailPage({ params }: { params: Promise<{ id: strin
                                             <div className="flex justify-between text-sm">
                                                 <span className="text-slate-500">Est. Monthly Return</span>
                                                 <span className="font-bold text-emerald-400">
-                                                    ${amount ? ((Number(amount) * 0.085) / 12).toFixed(2) : "0.00"}
+                                                    ${amount ? ((Number(amount) * (parseFloat(pool.apy) / 100)) / 12).toFixed(2) : "0.00"}
                                                 </span>
                                             </div>
                                             <div className="flex justify-between text-sm">
@@ -237,7 +247,7 @@ export default function PoolDetailPage({ params }: { params: Promise<{ id: strin
                                         </div>
 
                                         <button className="btn-primary w-full py-4 text-base font-bold uppercase tracking-wide">
-                                            Deposit & Earn 8.5%
+                                            Deposit & Earn {pool.apy}
                                         </button>
 
                                         <p className="text-[10px] text-center text-slate-500 font-medium">

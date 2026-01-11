@@ -3,6 +3,7 @@
 import { motion } from "framer-motion";
 import { Navbar } from "@/components/Navbar";
 import { useLendaRewards } from "@/hooks/useLendaRewards";
+import { useSeniorPool } from "@/hooks/useSeniorPool";
 import {
     Wallet,
     Coins,
@@ -11,15 +12,18 @@ import {
     History,
     TrendingUp,
     Download,
-    AlertCircle
+    AlertCircle,
+    SquareChartGantt
 } from "lucide-react";
 import { ConnectKitButton } from "connectkit";
 import { useAccount } from "wagmi";
+import { formatUnits } from "viem";
 import Link from "next/link";
 
 export default function PortfolioPage() {
     const { address } = useAccount();
-    const { tokenBalance, totalClaimed, claimRewards, isPending } = useLendaRewards();
+    const { tokenBalance, totalClaimed } = useLendaRewards();
+    const { fiduBalance, sharePrice, assets } = useSeniorPool();
 
     if (!address) {
         return (
@@ -39,6 +43,14 @@ export default function PortfolioPage() {
             </main>
         );
     }
+
+    // Calculations
+    const userFidu = fiduBalance ? Number(formatUnits(fiduBalance, 18)) : 0;
+    const price = sharePrice ? Number(formatUnits(sharePrice, 18)) : 1;
+    const seniorPoolValue = userFidu * price;
+
+    // Total NAV (Senior Pool + Lenda Token Value if we had a price for it)
+    const totalNav = seniorPoolValue;
 
     return (
         <main className="min-h-screen pb-20">
@@ -66,9 +78,9 @@ export default function PortfolioPage() {
                             </div>
                             <span className="text-xs font-black text-blue-300 uppercase tracking-widest">Net Asset Value</span>
                         </div>
-                        <div className="text-3xl font-bold text-white mb-1">$0.00</div>
+                        <div className="text-3xl font-bold text-white mb-1">${totalNav.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                         <div className="flex items-center gap-2 text-xs text-slate-500 font-bold">
-                            <TrendingUp className="w-3 h-3" /> --% this month
+                            <TrendingUp className="w-3 h-3 text-green-400" /> +0.00% this month
                         </div>
                     </motion.div>
 
@@ -86,7 +98,7 @@ export default function PortfolioPage() {
                         </div>
                         <div className="text-3xl font-bold text-white mb-1">{tokenBalance.toLocaleString()} <span className="text-sm font-normal text-slate-400">LENDA</span></div>
                         <div className="text-xs text-slate-500 font-bold uppercase tracking-widest">
-                            Verified Holder
+                            Verified Protocol Holder
                         </div>
                     </motion.div>
 
@@ -106,7 +118,7 @@ export default function PortfolioPage() {
                         </div>
                         <div className="text-3xl font-bold text-white mb-4">0 <span className="text-sm font-normal text-slate-400">LENDA</span></div>
                         <button
-                            disabled={true} // Disabled for MVP as no merkle proof backend
+                            disabled={true}
                             className="w-full py-2 rounded-xl bg-emerald-600/20 text-emerald-500 text-xs font-bold uppercase tracking-widest border border-emerald-500/20 cursor-not-allowed opacity-60"
                         >
                             No Rewards Available
@@ -117,7 +129,7 @@ export default function PortfolioPage() {
                     </motion.div>
                 </div>
 
-                {/* Active Investments Mock Table */}
+                {/* Active Investments Table */}
                 <div className="card">
                     <div className="flex items-center justify-between mb-8">
                         <h2 className="text-xl font-bold uppercase italic">Active Positions</h2>
@@ -131,22 +143,64 @@ export default function PortfolioPage() {
                             <thead>
                                 <tr className="border-b border-white/5 text-xs font-black text-slate-500 uppercase tracking-widest">
                                     <th className="pb-4 pl-4">Pool Name</th>
-                                    <th className="pb-4">Invested</th>
+                                    <th className="pb-4">Balance / Value</th>
                                     <th className="pb-4">Est. APY</th>
-                                    <th className="pb-4">Maturity</th>
+                                    <th className="pb-4">Status</th>
                                     <th className="pb-4 pr-4 text-right">Action</th>
                                 </tr>
                             </thead>
                             <tbody className="text-sm font-medium">
-                                {/* Empty State */}
+                                {userFidu > 0 && (
+                                    <tr className="border-b border-white/5 group hover:bg-white/[0.02] transition-all">
+                                        <td className="py-6 pl-4">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-10 h-10 rounded-xl bg-blue-600/10 flex items-center justify-center border border-blue-500/20">
+                                                    <TrendingUp className="w-5 h-5 text-blue-500" />
+                                                </div>
+                                                <div>
+                                                    <div className="font-black italic uppercase tracking-tight">Senior Pool</div>
+                                                    <div className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Automated Diversified Pool</div>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td className="py-6">
+                                            <div className="font-black italic text-lg">${seniorPoolValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                            <div className="text-xs text-slate-500 font-bold uppercase tracking-widest">{userFidu.toFixed(2)} FIDU</div>
+                                        </td>
+                                        <td className="py-6">
+                                            <div className="text-green-400 font-black italic text-lg">8.4%</div>
+                                        </td>
+                                        <td className="py-6">
+                                            <span className="px-3 py-1 bg-green-500/10 text-green-500 rounded-full text-[10px] font-black uppercase tracking-widest border border-green-500/20">
+                                                Active
+                                            </span>
+                                        </td>
+                                        <td className="py-6 pr-4 text-right">
+                                            <Link
+                                                href="/earn"
+                                                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 rounded-xl text-[10px] font-black uppercase tracking-widest italic hover:bg-blue-500 transition-all shadow-lg shadow-blue-600/20"
+                                            >
+                                                Manage <ArrowUpRight className="w-3 h-3" />
+                                            </Link>
+                                        </td>
+                                    </tr>
+                                )}
+
+                                {userFidu === 0 && (
+                                    <tr>
+                                        <td colSpan={5} className="py-12 text-center text-slate-500">
+                                            <div className="flex flex-col items-center gap-4">
+                                                <SquareChartGantt className="w-12 h-12 opacity-20" />
+                                                <p className="text-sm font-medium">No active investments found.</p>
+                                                <Link href="/earn" className="text-xs font-bold text-blue-400 uppercase tracking-widest hover:text-blue-300">
+                                                    Visit Earn to Start Investing
+                                                </Link>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                )}
                             </tbody>
                         </table>
-                        <div className="py-12 text-center border-b border-white/5">
-                            <p className="text-slate-500 text-sm font-medium">No active investments found.</p>
-                            <Link href="/pools" className="inline-block mt-4 text-xs font-bold text-blue-400 uppercase tracking-widest hover:text-blue-300">
-                                Browse Pools to Invest
-                            </Link>
-                        </div>
                     </div>
                 </div>
 
@@ -161,3 +215,4 @@ export default function PortfolioPage() {
         </main>
     );
 }
+

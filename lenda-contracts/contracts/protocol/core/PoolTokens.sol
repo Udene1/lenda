@@ -1,15 +1,20 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.6.12;
-pragma experimental ABIEncoderV2;
+pragma solidity ^0.8.0;
 
-import {ERC721PresetMinterPauserAutoIdUpgradeSafe} from "../../external/ERC721PresetMinterPauserAutoId.sol";
-import {ERC165UpgradeSafe} from "../../external/ERC721PresetMinterPauserAutoId.sol";
-import {IERC165} from "../../external/ERC721PresetMinterPauserAutoId.sol";
-import {GoldfinchConfig} from "./GoldfinchConfig.sol";
-import {ConfigHelper} from "./ConfigHelper.sol";
-import {HasAdmin} from "./HasAdmin.sol";
+import {ERC721Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC721/ERC721Upgradeable.sol";
+import {IERC721Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC721/IERC721Upgradeable.sol";
+import {IERC721EnumerableUpgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC721/extensions/IERC721EnumerableUpgradeable.sol";
+import {ERC721EnumerableUpgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC721/extensions/ERC721EnumerableUpgradeable.sol";
+import {ERC721PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC721/extensions/ERC721PausableUpgradeable.sol";
+import {IERC2981Upgradeable} from "@openzeppelin/contracts-upgradeable/interfaces/IERC2981Upgradeable.sol";
+import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import {IERC165Upgradeable} from "@openzeppelin/contracts-upgradeable/utils/introspection/IERC165Upgradeable.sol";
+import {CountersUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/CountersUpgradeable.sol";
+
+import {LendaConfig} from "./LendaConfig.sol";
+import {LendaConfigHelper} from "./LendaConfigHelper.sol";
+import {BaseUpgradeablePausable} from "./BaseUpgradeablePausable.sol";
 import {ConfigurableRoyaltyStandard} from "./ConfigurableRoyaltyStandard.sol";
-import {IERC2981} from "../../interfaces/IERC2981.sol";
 import {ITranchedPool} from "../../interfaces/ITranchedPool.sol";
 import {IPoolTokens} from "../../interfaces/IPoolTokens.sol";
 import {IBackerRewards} from "../../interfaces/IBackerRewards.sol";
@@ -18,16 +23,19 @@ import {IBackerRewards} from "../../interfaces/IBackerRewards.sol";
  * @title PoolTokens
  * @notice PoolTokens is an ERC721 compliant contract, which can represent
  *  junior tranche or senior tranche shares of any of the borrower pools.
- * @author Goldfinch
+ * @author Lenda Protocol
  */
-contract PoolTokens is IPoolTokens, ERC721PresetMinterPauserAutoIdUpgradeSafe, HasAdmin, IERC2981 {
-  bytes4 private constant _INTERFACE_ID_ERC721 = 0x80ac58cd;
-  bytes4 private constant _INTERFACE_ID_ERC721_METADATA = 0x5b5e139f;
-  bytes4 private constant _INTERFACE_ID_ERC721_ENUMERABLE = 0x780e9d63;
-  bytes4 private constant _INTERFACE_ID_ERC165 = 0x01ffc9a7;
+contract PoolTokens is
+  IPoolTokens,
+  ERC721EnumerableUpgradeable,
+  ERC721PausableUpgradeable,
+  BaseUpgradeablePausable,
+  IERC2981Upgradeable
+{
+  using CountersUpgradeable for CountersUpgradeable.Counter;
+  using LendaConfigHelper for LendaConfig;
 
-  GoldfinchConfig public config;
-  using ConfigHelper for GoldfinchConfig;
+  LendaConfig public config;
 
   // tokenId => tokenInfo
   mapping(uint256 => TokenInfo) public tokens;
@@ -37,32 +45,27 @@ contract PoolTokens is IPoolTokens, ERC721PresetMinterPauserAutoIdUpgradeSafe, H
   ConfigurableRoyaltyStandard.RoyaltyParams public royaltyParams;
   using ConfigurableRoyaltyStandard for ConfigurableRoyaltyStandard.RoyaltyParams;
 
+  CountersUpgradeable.Counter public _tokenIdTracker;
+
   /*
     We are using our own initializer function so that OZ doesn't automatically
     set owner as msg.sender. Also, it lets us set our config contract
   */
   // solhint-disable-next-line func-name-mixedcase
-  function __initialize__(address owner, GoldfinchConfig _config) external initializer {
+  function __initialize__(address owner, LendaConfig _config) external initializer {
     require(
       owner != address(0) && address(_config) != address(0),
       "Owner and config addresses cannot be empty"
     );
 
-    __Context_init_unchained();
-    __AccessControl_init_unchained();
-    __ERC165_init_unchained();
-    // This is setting name and symbol of the NFT's
-    __ERC721_init_unchained("Goldfinch V2 Pool Tokens", "GFI-V2-PT");
-    __Pausable_init_unchained();
-    __ERC721Pausable_init_unchained();
+    __BaseUpgradeablePausable__init(owner);
+    __ERC721_init("Lenda Pool Tokens", "LENDA-PT");
+    __ERC721Enumerable_init();
+    __ERC721Pausable_init();
 
     config = _config;
 
-    _setupRole(PAUSER_ROLE, owner);
-    _setupRole(OWNER_ROLE, owner);
-
     _setRoleAdmin(PAUSER_ROLE, OWNER_ROLE);
-    _setRoleAdmin(OWNER_ROLE, OWNER_ROLE);
   }
 
   /// @inheritdoc IPoolTokens
@@ -73,7 +76,7 @@ contract PoolTokens is IPoolTokens, ERC721PresetMinterPauserAutoIdUpgradeSafe, H
     address poolAddress = _msgSender();
 
     PoolInfo storage pool = pools[poolAddress];
-    pool.totalMinted = pool.totalMinted.add(params.principalAmount);
+    pool.totalMinted = pool.totalMinted + params.principalAmount;
 
     tokenId = _createToken({
       principalAmount: params.principalAmount,
@@ -99,15 +102,15 @@ contract PoolTokens is IPoolTokens, ERC721PresetMinterPauserAutoIdUpgradeSafe, H
     require(_msgSender() == poolAddr, "Only the token's pool can redeem");
 
     PoolInfo storage pool = pools[poolAddr];
-    pool.totalPrincipalRedeemed = pool.totalPrincipalRedeemed.add(principalRedeemed);
+    pool.totalPrincipalRedeemed = pool.totalPrincipalRedeemed + principalRedeemed;
     require(pool.totalPrincipalRedeemed <= pool.totalMinted, "Cannot redeem more than we minted");
 
-    token.principalRedeemed = token.principalRedeemed.add(principalRedeemed);
+    token.principalRedeemed = token.principalRedeemed + principalRedeemed;
     require(
       token.principalRedeemed <= token.principalAmount,
       "Cannot redeem more than principal-deposited amount for token"
     );
-    token.interestRedeemed = token.interestRedeemed.add(interestRedeemed);
+    token.interestRedeemed = token.interestRedeemed + interestRedeemed;
 
     emit TokenRedeemed(
       ownerOf(tokenId),
@@ -121,18 +124,13 @@ contract PoolTokens is IPoolTokens, ERC721PresetMinterPauserAutoIdUpgradeSafe, H
 
   /** @notice reduce a given pool token's principalAmount and principalRedeemed by a specified amount
    *  @dev uses safemath to prevent underflow
-   *  @dev this function is only intended for use as part of the v2.6.0 upgrade
-   *    to rectify a bug that allowed users to create a PoolToken that had a
-   *    larger amount of principal than they actually made available to the
-   *    borrower.  This bug is fixed in v2.6.0 but still requires past pool tokens
-   *    to have their principal redeemed and deposited to be rectified.
    *  @param tokenId id of token to decrease
    *  @param amount amount to decrease by
    */
   function reducePrincipalAmount(uint256 tokenId, uint256 amount) external onlyAdmin {
     TokenInfo storage tokenInfo = tokens[tokenId];
-    tokenInfo.principalAmount = tokenInfo.principalAmount.sub(amount);
-    tokenInfo.principalRedeemed = tokenInfo.principalRedeemed.sub(amount);
+    tokenInfo.principalAmount = tokenInfo.principalAmount - amount;
+    tokenInfo.principalRedeemed = tokenInfo.principalRedeemed - amount;
   }
 
   /// @inheritdoc IPoolTokens
@@ -147,10 +145,10 @@ contract PoolTokens is IPoolTokens, ERC721PresetMinterPauserAutoIdUpgradeSafe, H
     require(token.principalAmount >= principalAmount, "Insufficient principal");
 
     PoolInfo storage pool = pools[poolAddr];
-    pool.totalMinted = pool.totalMinted.sub(principalAmount);
+    pool.totalMinted = pool.totalMinted - principalAmount;
     require(pool.totalPrincipalRedeemed <= pool.totalMinted, "Cannot withdraw more than redeemed");
 
-    token.principalAmount = token.principalAmount.sub(principalAmount);
+    token.principalAmount = token.principalAmount - principalAmount;
 
     emit TokenPrincipalWithdrawn(
       ownerOf(tokenId),
@@ -164,10 +162,8 @@ contract PoolTokens is IPoolTokens, ERC721PresetMinterPauserAutoIdUpgradeSafe, H
   /// @inheritdoc IPoolTokens
   function burn(uint256 tokenId) external virtual override whenNotPaused {
     TokenInfo memory token = _getTokenInfo(tokenId);
-    bool canBurn = _isApprovedOrOwner(_msgSender(), tokenId);
-    bool fromTokenPool = _validPool(_msgSender()) && token.pool == _msgSender();
     address owner = ownerOf(tokenId);
-    require(canBurn || fromTokenPool, "ERC721Burnable: caller cannot burn this token");
+    require(_isApprovedOrOwner(_msgSender(), tokenId) || (_validPool(_msgSender()) && token.pool == _msgSender()), "NA");
     require(
       token.principalRedeemed == token.principalAmount,
       "Can only burn fully redeemed tokens"
@@ -187,7 +183,7 @@ contract PoolTokens is IPoolTokens, ERC721PresetMinterPauserAutoIdUpgradeSafe, H
   }
 
   /// @inheritdoc IPoolTokens
-  function onPoolCreated(address newPool) external override onlyGoldfinchFactory {
+  function onPoolCreated(address newPool) external override onlyLendaFactory {
     pools[newPool].created = true;
   }
 
@@ -206,8 +202,6 @@ contract PoolTokens is IPoolTokens, ERC721PresetMinterPauserAutoIdUpgradeSafe, H
 
   /**
    * @inheritdoc IPoolTokens
-   * @dev NA: Not Authorized
-   * @dev IA: Invalid Amount - newPrincipal1 not in range (0, principalAmount)
    */
   function splitToken(
     uint256 tokenId,
@@ -221,11 +215,6 @@ contract PoolTokens is IPoolTokens, ERC721PresetMinterPauserAutoIdUpgradeSafe, H
       .getBackerRewards()
       .getTokenInfo(tokenId);
 
-    // Burn the original token before calling out to other contracts to prevent possible reentrancy attacks.
-    // A reentrancy guard on this function alone is insufficient because someone may be able to reenter the
-    // protocol through a different contract that reads pool token metadata. Following checks-effects-interactions
-    // here leads to a clunky implementation (fn's with many params) but guarding against potential reentrancy
-    // is more important.
     address tokenOwner = ownerOf(tokenId);
     _destroyAndBurn(tokenOwner, address(tokenInfo.pool), tokenId);
 
@@ -245,7 +234,7 @@ contract PoolTokens is IPoolTokens, ERC721PresetMinterPauserAutoIdUpgradeSafe, H
       newTokenId1: tokenId1,
       newPrincipal1: newPrincipal1,
       newTokenId2: tokenId2,
-      newPrincipal2: tokenInfo.principalAmount.sub(newPrincipal1)
+      newPrincipal2: tokenInfo.principalAmount - newPrincipal1
     });
   }
 
@@ -257,9 +246,8 @@ contract PoolTokens is IPoolTokens, ERC721PresetMinterPauserAutoIdUpgradeSafe, H
     uint256 newTokenId2,
     uint256 newPrincipal1
   ) internal {
-    uint256 rewardsClaimed1 = backerRewardsTokenInfo.rewardsClaimed.mul(newPrincipal1).div(
-      tokenInfo.principalAmount
-    );
+    uint256 rewardsClaimed1 = (backerRewardsTokenInfo.rewardsClaimed * newPrincipal1) /
+      tokenInfo.principalAmount;
 
     config.getBackerRewards().setBackerRewardsTokenInfoOnSplit({
       originalBackerRewardsTokenInfo: backerRewardsTokenInfo,
@@ -270,7 +258,7 @@ contract PoolTokens is IPoolTokens, ERC721PresetMinterPauserAutoIdUpgradeSafe, H
     config.getBackerRewards().setBackerRewardsTokenInfoOnSplit({
       originalBackerRewardsTokenInfo: backerRewardsTokenInfo,
       newTokenId: newTokenId2,
-      newRewardsClaimed: backerRewardsTokenInfo.rewardsClaimed.sub(rewardsClaimed1)
+      newRewardsClaimed: backerRewardsTokenInfo.rewardsClaimed - rewardsClaimed1
     });
   }
 
@@ -281,12 +269,10 @@ contract PoolTokens is IPoolTokens, ERC721PresetMinterPauserAutoIdUpgradeSafe, H
     uint256 newPrincipal1
   ) internal returns (uint256 newTokenId1, uint256 newTokenId2) {
     // All new vals are proportional to the new token's principal
-    uint256 principalRedeemed1 = tokenInfo.principalRedeemed.mul(newPrincipal1).div(
-      tokenInfo.principalAmount
-    );
-    uint256 interestRedeemed1 = tokenInfo.interestRedeemed.mul(newPrincipal1).div(
-      tokenInfo.principalAmount
-    );
+    uint256 principalRedeemed1 = (tokenInfo.principalRedeemed * newPrincipal1) /
+      tokenInfo.principalAmount;
+    uint256 interestRedeemed1 = (tokenInfo.interestRedeemed * newPrincipal1) /
+      tokenInfo.principalAmount;
 
     newTokenId1 = _createToken(
       newPrincipal1,
@@ -298,10 +284,10 @@ contract PoolTokens is IPoolTokens, ERC721PresetMinterPauserAutoIdUpgradeSafe, H
     );
 
     newTokenId2 = _createToken(
-      tokenInfo.principalAmount.sub(newPrincipal1),
+      tokenInfo.principalAmount - newPrincipal1,
       tokenInfo.tranche,
-      tokenInfo.principalRedeemed.sub(principalRedeemed1),
-      tokenInfo.interestRedeemed.sub(interestRedeemed1),
+      tokenInfo.principalRedeemed - principalRedeemed1,
+      tokenInfo.interestRedeemed - interestRedeemed1,
       tokenInfo.pool,
       tokenOwner
     );
@@ -314,14 +300,6 @@ contract PoolTokens is IPoolTokens, ERC721PresetMinterPauserAutoIdUpgradeSafe, H
 
   /**
    * @notice Mint the token and save its metadata to storage
-   * @param principalAmount token principal
-   * @param tranche tranche of the pool to which the token belongs
-   * @param principalRedeemed amount of principal already redeemed for the token. This is
-   *  0 for tokens created from a deposit, and could be non-zero for tokens created from a split
-   * @param interestRedeemed amount of interest already redeemed for the token. This is
-   *  0 for tokens created from a deposit, and could be non-zero for tokens created from a split
-   * @param poolAddress pool to which the token belongs
-   * @param mintTo the token owner
    * @return tokenId id of the created token
    */
   function _createToken(
@@ -369,12 +347,7 @@ contract PoolTokens is IPoolTokens, ERC721PresetMinterPauserAutoIdUpgradeSafe, H
     return tokens[tokenId];
   }
 
-  /// @notice Called with the sale price to determine how much royalty
-  //    is owed and to whom.
-  /// @param _tokenId The NFT asset queried for royalty information
-  /// @param _salePrice The sale price of the NFT asset specified by _tokenId
-  /// @return receiver Address that should receive royalties
-  /// @return royaltyAmount The royalty payment amount for _salePrice
+  /// @inheritdoc IERC2981Upgradeable
   function royaltyInfo(
     uint256 _tokenId,
     uint256 _salePrice
@@ -382,32 +355,75 @@ contract PoolTokens is IPoolTokens, ERC721PresetMinterPauserAutoIdUpgradeSafe, H
     return royaltyParams.royaltyInfo(_tokenId, _salePrice);
   }
 
-  /// @notice Set royalty params used in `royaltyInfo`. This function is only callable by
-  ///   an address with `OWNER_ROLE`.
-  /// @param newReceiver The new address which should receive royalties. See `receiver`.
-  /// @param newRoyaltyPercent The new percent of `salePrice` that should be taken for royalties.
-  ///   See `royaltyPercent`.
   function setRoyaltyParams(address newReceiver, uint256 newRoyaltyPercent) external onlyAdmin {
     royaltyParams.setRoyaltyParams(newReceiver, newRoyaltyPercent);
   }
 
-  function setBaseURI(string calldata baseURI_) external onlyAdmin {
-    // TODO - consider moving metadata stuff to a superclass
-    _setBaseURI(baseURI_);
-  }
+  // --- Overrides required by Solidity ---
 
   function supportsInterface(
-    bytes4 id
-  ) public view override(ERC165UpgradeSafe, IERC165) returns (bool) {
-    return (id == _INTERFACE_ID_ERC721 ||
-      id == _INTERFACE_ID_ERC721_METADATA ||
-      id == _INTERFACE_ID_ERC721_ENUMERABLE ||
-      id == _INTERFACE_ID_ERC165 ||
-      id == ConfigurableRoyaltyStandard._INTERFACE_ID_ERC2981);
+    bytes4 interfaceId
+  ) public view override(ERC721EnumerableUpgradeable, AccessControlUpgradeable, IERC165Upgradeable, ERC721Upgradeable) returns (bool) {
+    return
+      interfaceId == type(IERC2981Upgradeable).interfaceId ||
+      super.supportsInterface(interfaceId);
   }
 
-  modifier onlyGoldfinchFactory() {
-    require(_msgSender() == config.goldfinchFactoryAddress(), "Only Goldfinch factory is allowed");
+  function _beforeTokenTransfer(
+    address from,
+    address to,
+    uint256 tokenId,
+    uint256 batchSize
+  ) internal override(ERC721EnumerableUpgradeable, ERC721PausableUpgradeable) {
+    super._beforeTokenTransfer(from, to, tokenId, batchSize);
+  }
+
+  function ownerOf(uint256 tokenId) public view override(ERC721Upgradeable, IERC721Upgradeable) returns (address) {
+    return super.ownerOf(tokenId);
+  }
+
+  function balanceOf(address owner) public view override(ERC721Upgradeable, IERC721Upgradeable) returns (uint256) {
+    return super.balanceOf(owner);
+  }
+
+  function isApprovedForAll(address owner, address operator) public view override(ERC721Upgradeable, IERC721Upgradeable) returns (bool) {
+    return super.isApprovedForAll(owner, operator);
+  }
+
+  function getApproved(uint256 tokenId) public view override(ERC721Upgradeable, IERC721Upgradeable) returns (address) {
+    return super.getApproved(tokenId);
+  }
+
+  function setApprovalForAll(address operator, bool approved) public override(ERC721Upgradeable, IERC721Upgradeable) {
+    super.setApprovalForAll(operator, approved);
+  }
+
+  function transferFrom(address from, address to, uint256 tokenId) public override(ERC721Upgradeable, IERC721Upgradeable) {
+    super.transferFrom(from, to, tokenId);
+  }
+
+  function safeTransferFrom(address from, address to, uint256 tokenId) public override(ERC721Upgradeable, IERC721Upgradeable) {
+    super.safeTransferFrom(from, to, tokenId);
+  }
+
+  function safeTransferFrom(address from, address to, uint256 tokenId, bytes memory data) public override(ERC721Upgradeable, IERC721Upgradeable) {
+    super.safeTransferFrom(from, to, tokenId, data);
+  }
+
+  function totalSupply() public view override(ERC721EnumerableUpgradeable, IERC721EnumerableUpgradeable) returns (uint256) {
+    return super.totalSupply();
+  }
+
+  function tokenByIndex(uint256 index) public view override(ERC721EnumerableUpgradeable, IERC721EnumerableUpgradeable) returns (uint256) {
+    return super.tokenByIndex(index);
+  }
+
+  function tokenOfOwnerByIndex(address owner, uint256 index) public view override(ERC721EnumerableUpgradeable, IERC721EnumerableUpgradeable) returns (uint256) {
+    return super.tokenOfOwnerByIndex(owner, index);
+  }
+
+  modifier onlyLendaFactory() {
+    require(_msgSender() == config.lendaFactoryAddress(), "Only Lenda factory is allowed");
     _;
   }
 

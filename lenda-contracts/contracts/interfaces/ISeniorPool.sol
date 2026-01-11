@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: MIT
-
-pragma solidity >=0.6.12;
-pragma experimental ABIEncoderV2;
+pragma solidity ^0.8.0;
 
 import {ITranchedPool} from "./ITranchedPool.sol";
 import {ISeniorPoolEpochWithdrawals} from "./ISeniorPoolEpochWithdrawals.sol";
 
+/**
+ * @title ISeniorPool
+ * @notice Interface for the Senior Pool contract in the Lenda protocol.
+ * @author Lenda Protocol
+ */
 abstract contract ISeniorPool is ISeniorPoolEpochWithdrawals {
   uint256 public sharePrice;
   uint256 public totalLoansOutstanding;
@@ -21,16 +24,8 @@ abstract contract ISeniorPool is ISeniorPoolEpochWithdrawals {
     bytes32 s
   ) external virtual returns (uint256 depositShares);
 
-  /**
-   * @notice Withdraw `usdcAmount` of USDC, bypassing the epoch withdrawal system. Callable
-   * by Zapper only.
-   */
   function withdraw(uint256 usdcAmount) external virtual returns (uint256 amount);
 
-  /**
-   * @notice Withdraw `fiduAmount` of FIDU converted to USDC at the current share price,
-   * bypassing the epoch withdrawal system. Callable by Zapper only
-   */
   function withdrawInFidu(uint256 fiduAmount) external virtual returns (uint256 amount);
 
   function invest(ITranchedPool pool) external virtual returns (uint256);

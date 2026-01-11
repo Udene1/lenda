@@ -1,15 +1,5 @@
-// SPDX-License-Identifier:MIT
-
-/*
-  Vendored from @opengsn/gsn@2.1.0
-  Reason:
-   * @opengsn/gsn is deprecated and does not compile for node 16. Replacement package
-   * has incompatable changes.
-  Alterations:
-   * change solidity version from 0.6.2 -> 0.6.12 to match our contracts
-*/
-
-pragma solidity 0.6.12;
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
 
 /**
  * a contract must implement this interface in order to support relayed transaction.
@@ -30,7 +20,7 @@ abstract contract IRelayRecipient {
    * otherwise, return `msg.sender`
    * should be used in the contract anywhere instead of msg.sender
    */
-  function _msgSender() internal view virtual returns (address payable);
+  function _msgSender() internal view virtual returns (address);
 
   /**
    * return the msg.data of this call.
@@ -40,7 +30,7 @@ abstract contract IRelayRecipient {
    * should be used in the contract instead of msg.data, where the difference matters (e.g. when explicitly
    * signing or hashing the
    */
-  function _msgData() internal view virtual returns (bytes memory);
+  function _msgData() internal view virtual returns (bytes calldata);
 
   function versionRecipient() external view virtual returns (string memory);
 }

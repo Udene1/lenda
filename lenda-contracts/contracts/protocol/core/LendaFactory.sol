@@ -1,39 +1,36 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity 0.6.12;
-pragma experimental ABIEncoderV2;
+pragma solidity ^0.8.0;
 
 import {BaseUpgradeablePausable} from "./BaseUpgradeablePausable.sol";
-import {ConfigHelper} from "./ConfigHelper.sol";
-import {GoldfinchConfig} from "./GoldfinchConfig.sol";
+import {LendaConfigHelper} from "./LendaConfigHelper.sol";
+import {LendaConfig} from "./LendaConfig.sol";
 import {IBorrower} from "../../interfaces/IBorrower.sol";
 import {ISchedule} from "../../interfaces/ISchedule.sol";
 import {ITranchedPool} from "../../interfaces/ITranchedPool.sol";
 import {ICreditLine} from "../../interfaces/ICreditLine.sol";
-import {IPeriodMapper} from "../../interfaces/IPeriodMapper.sol";
 import {ImplementationRepository} from "./proxy/ImplementationRepository.sol";
 import {UcuProxy} from "./proxy/UcuProxy.sol";
 
 /**
- * @title GoldfinchFactory
+ * @title LendaFactory
  * @notice Contract that allows us to create other contracts, such as CreditLines and BorrowerContracts
- *  Note GoldfinchFactory is a legacy name. More properly this can be considered simply the GoldfinchFactory
- * @author Goldfinch
+ * @author Lenda Protocol
  */
 
-contract GoldfinchFactory is BaseUpgradeablePausable {
-  GoldfinchConfig public config;
+contract LendaFactory is BaseUpgradeablePausable {
+  LendaConfig public config;
 
   /// Role to allow for pool creation
   bytes32 public constant BORROWER_ROLE = keccak256("BORROWER_ROLE");
 
-  using ConfigHelper for GoldfinchConfig;
+  using LendaConfigHelper for LendaConfig;
 
   event BorrowerCreated(address indexed borrower, address indexed owner);
   event PoolCreated(ITranchedPool indexed pool, address indexed borrower);
   event CreditLineCreated(ICreditLine indexed creditLine);
 
-  function initialize(address owner, GoldfinchConfig _config) public initializer {
+  function initialize(address owner, LendaConfig _config) public initializer {
     require(
       owner != address(0) && address(_config) != address(0),
       "Owner and config addresses cannot be empty"
@@ -45,8 +42,6 @@ contract GoldfinchFactory is BaseUpgradeablePausable {
 
   /**
    * @notice Allows anyone to create a CreditLine contract instance
-   * @dev There is no value to calling this function directly. It is only meant to be called
-   *  by a TranchedPool during it's creation process.
    */
   function createCreditLine() external returns (ICreditLine) {
     ICreditLine creditLine = ICreditLine(_deployMinimal(config.creditLineImplementationAddress()));
@@ -68,8 +63,6 @@ contract GoldfinchFactory is BaseUpgradeablePausable {
 
   /**
    * @notice Allows anyone to create a new TranchedPool for a single borrower
-   * Requirements:
-   *  You are the admin or a borrower
    */
   function createPool(
     address _borrower,
@@ -82,7 +75,6 @@ contract GoldfinchFactory is BaseUpgradeablePausable {
     uint256[] calldata _allowedUIDTypes,
     bool _seniorOnly
   ) external onlyAdminOrBorrower returns (ITranchedPool pool) {
-    // need to enclose in a scope to avoid overflowing stack
     {
       ImplementationRepository repo = config.getTranchedPoolImplementationRepository();
       UcuProxy poolProxy = new UcuProxy(repo, _borrower, repo.currentLineageId());
@@ -105,11 +97,8 @@ contract GoldfinchFactory is BaseUpgradeablePausable {
     config.getPoolTokens().onPoolCreated(address(pool));
   }
 
-  // Stolen from:
-  // https://github.com/OpenZeppelin/openzeppelin-sdk/blob/master/packages/lib/contracts/upgradeability/ProxyFactory.sol
   function _deployMinimal(address _logic) internal returns (address proxy) {
     bytes20 targetBytes = bytes20(_logic);
-    // solhint-disable-next-line no-inline-assembly
     assembly {
       let clone := mload(0x40)
       mstore(clone, 0x3d602d80600a3d3981f3363d3d373d3d3d363d73000000000000000000000000)

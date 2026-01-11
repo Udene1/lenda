@@ -16,7 +16,7 @@ CORS(app)  # Enable CORS for frontend requests
 # Configuration
 PRIVATE_KEY = os.getenv("PRIVATE_KEY")
 RPC_URL = "https://sepolia.base.org"
-UID_ADDRESS = "0x42f07dBa4045dCe69e203728566A2f2d4DCDeAfe"
+UID_ADDRESS = "0xCB18688d24feBB377932E703805D7B2d94fF0E13"
 
 if not PRIVATE_KEY:
     print("ERROR: PRIVATE_KEY not found in .env")

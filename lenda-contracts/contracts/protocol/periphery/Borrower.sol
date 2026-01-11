@@ -1,38 +1,33 @@
 // SPDX-License-Identifier: MIT
-
-pragma solidity 0.6.12;
-pragma experimental ABIEncoderV2;
+pragma solidity ^0.8.0;
 
 import {IVersioned} from "../../interfaces/IVersioned.sol";
 import {ICreditLine} from "../../interfaces/ICreditLine.sol";
 import {SafeERC20Transfer} from "../../library/SafeERC20Transfer.sol";
 import {BaseUpgradeablePausable} from "../core/BaseUpgradeablePausable.sol";
-import {ConfigHelper} from "../core/ConfigHelper.sol";
-import {GoldfinchConfig} from "../core/GoldfinchConfig.sol";
+import {LendaConfigHelper} from "../core/LendaConfigHelper.sol";
+import {LendaConfig} from "../core/LendaConfig.sol";
 import {IERC20withDec} from "../../interfaces/IERC20withDec.sol";
 import {ITranchedPool} from "../../interfaces/ITranchedPool.sol";
 import {ILoan} from "../../interfaces/ILoan.sol";
 import {IBorrower} from "../../interfaces/IBorrower.sol";
 import {BaseRelayRecipient} from "../../external/BaseRelayRecipient.sol";
-import {ContextUpgradeSafe} from "@openzeppelin/contracts-ethereum-package/contracts/GSN/Context.sol";
-import {Math} from "@openzeppelin/contracts-ethereum-package/contracts/math/Math.sol";
+import {ContextUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /**
- * @title Goldfinch's Borrower contract
- * @notice These contracts represent the a convenient way for a borrower to interact with Goldfinch
+ * @title Lenda's Borrower contract
+ * @notice These contracts represent the a convenient way for a borrower to interact with Lenda
  *  They are 100% optional. However, they let us add many sophisticated and convient features for borrowers
  *  while still keeping our core protocol small and secure. We therefore expect most borrowers will use them.
- *  This contract is the "official" borrower contract that will be maintained by Goldfinch governance. However,
- *  in theory, anyone can fork or create their own version, or not use any contract at all. The core functionality
- *  is completely agnostic to whether it is interacting with a contract or an externally owned account (EOA).
- * @author Goldfinch
+ * @author Lenda Protocol
  */
 
 contract Borrower is BaseUpgradeablePausable, BaseRelayRecipient, IBorrower {
   using SafeERC20Transfer for IERC20withDec;
-  using ConfigHelper for GoldfinchConfig;
+  using LendaConfigHelper for LendaConfig;
 
-  GoldfinchConfig public config;
+  LendaConfig public config;
 
   address private constant USDT_ADDRESS = address(0xdAC17F958D2ee523a2206206994597C13D831ec7);
   address private constant BUSD_ADDRESS = address(0x4Fabb145d64652a948d72533023f6E7A623C7C53);
@@ -45,15 +40,15 @@ contract Borrower is BaseUpgradeablePausable, BaseRelayRecipient, IBorrower {
       "Owner and config addresses cannot be empty"
     );
     __BaseUpgradeablePausable__init(owner);
-    config = GoldfinchConfig(_config);
+    config = LendaConfig(_config);
 
     trustedForwarder = config.trustedForwarderAddress();
 
     // Handle default approvals. Pool, and OneInch for maximum amounts
     address oneInch = config.oneInchAddress();
     IERC20withDec usdc = config.getUSDC();
-    usdc.approve(oneInch, uint256(-1));
-    bytes memory data = abi.encodeWithSignature("approve(address,uint256)", oneInch, uint256(-1));
+    usdc.approve(oneInch, type(uint256).max);
+    bytes memory data = abi.encodeWithSignature("approve(address,uint256)", oneInch, type(uint256).max);
     _invoke(USDT_ADDRESS, data);
     _invoke(BUSD_ADDRESS, data);
     _invoke(GUSD_ADDRESS, data);
@@ -89,7 +84,7 @@ contract Borrower is BaseUpgradeablePausable, BaseRelayRecipient, IBorrower {
   }
 
   /**
-   * @notice Drawdown on a v1 or v2 pool and swap the usdc to the desired token using OneInch
+   * @notice Drawdown on a pool and swap the usdc to the desired token using OneInch
    * @param amount usdc amount to drawdown from the pool
    * @param addressToSendTo address to send the `toToken` to
    * @param toToken address of the ERC20 to swap to
@@ -126,7 +121,7 @@ contract Borrower is BaseUpgradeablePausable, BaseRelayRecipient, IBorrower {
   }
 
   /**
-   * @notice Pay back a v1 or v2 tranched pool
+   * @notice Pay back a tranched pool
    * @param poolAddress pool address
    * @param amount USDC amount to pay
    */
@@ -139,7 +134,7 @@ contract Borrower is BaseUpgradeablePausable, BaseRelayRecipient, IBorrower {
   }
 
   /**
-   * @notice Pay back multiple pools. Supports v0.1.0 and v1.0.0 pools
+   * @notice Pay back multiple pools.
    * @param pools list of pool addresses for which the caller is the borrower
    * @param amounts amounts to pay back
    */
@@ -148,7 +143,7 @@ contract Borrower is BaseUpgradeablePausable, BaseRelayRecipient, IBorrower {
 
     uint256 totalAmount;
     for (uint256 i = 0; i < amounts.length; i++) {
-      totalAmount = totalAmount.add(amounts[i]);
+        totalAmount = totalAmount + amounts[i];
     }
 
     // Do a single transfer, which is cheaper
@@ -163,7 +158,7 @@ contract Borrower is BaseUpgradeablePausable, BaseRelayRecipient, IBorrower {
   }
 
   /**
-   * @notice Pay back a v2.0.0 Tranched Pool
+   * @notice Pay back a Tranched Pool with split principal/interest
    * @param poolAddress The pool to be paid back
    * @param principalAmount principal amount to pay
    * @param interestAmount interest amount to pay
@@ -176,9 +171,7 @@ contract Borrower is BaseUpgradeablePausable, BaseRelayRecipient, IBorrower {
     // Take the minimum USDC to cover actual amounts owed
     ITranchedPool pool = ITranchedPool(poolAddress);
     uint256 maxPrincipalPayment = pool.creditLine().balance();
-    uint256 maxInterestPayment = pool.creditLine().interestOwed().add(
-      pool.creditLine().interestAccrued()
-    );
+    uint256 maxInterestPayment = pool.creditLine().interestOwed() + pool.creditLine().interestAccrued();
     uint256 principalPayment = Math.min(principalAmount, maxPrincipalPayment);
     uint256 interestPayment = Math.min(interestAmount, maxInterestPayment);
     config.getUSDC().safeERC20TransferFrom(
@@ -231,7 +224,7 @@ contract Borrower is BaseUpgradeablePausable, BaseRelayRecipient, IBorrower {
 
     uint256 totalMinAmount = 0;
     for (uint256 i = 0; i < minAmounts.length; i++) {
-      totalMinAmount = totalMinAmount.add(minAmounts[i]);
+        totalMinAmount = totalMinAmount + minAmounts[i];
     }
 
     transferFrom(fromToken, _msgSender(), address(this), originAmount);
@@ -296,21 +289,12 @@ contract Borrower is BaseUpgradeablePausable, BaseRelayRecipient, IBorrower {
    * @notice Performs a generic transaction.
    * @param _target The address for the transaction.
    * @param _data The data of the transaction.
-   * Mostly copied from Argent:
-   * https://github.com/argentlabs/argent-contracts/blob/develop/contracts/wallet/BaseWallet.sol#L111
    */
   function _invoke(address _target, bytes memory _data) internal returns (bytes memory) {
-    // External contracts can be compiled with different Solidity versions
-    // which can cause "revert without reason" when called through,
-    // for example, a standard IERC20 ABI compiled on the latest version.
-    // This low-level call avoids that issue.
-
     bool success;
     bytes memory _res;
-    // solhint-disable-next-line avoid-low-level-calls
     (success, _res) = _target.call(_data);
     if (!success && _res.length > 0) {
-      // solhint-disable-next-line no-inline-assembly
       assembly {
         returndatacopy(0, 0, returndatasize())
         revert(0, returndatasize())
@@ -327,15 +311,11 @@ contract Borrower is BaseUpgradeablePausable, BaseRelayRecipient, IBorrower {
     }
   }
 
-  // OpenZeppelin contracts come with support for GSN _msgSender() (which just defaults to msg.sender)
-  // Since there are two different versions of the function in the hierarchy, we need to instruct solidity to
-  // use the relay recipient version which can actually pull the real sender from the parameters.
-  // https://www.notion.so/My-contract-is-using-OpenZeppelin-How-do-I-add-GSN-support-2bee7e9d5f774a0cbb60d3a8de03e9fb
   function _msgSender()
     internal
     view
-    override(ContextUpgradeSafe, BaseRelayRecipient)
-    returns (address payable)
+    override(ContextUpgradeable, BaseRelayRecipient)
+    returns (address)
   {
     return BaseRelayRecipient._msgSender();
   }
@@ -343,8 +323,8 @@ contract Borrower is BaseUpgradeablePausable, BaseRelayRecipient, IBorrower {
   function _msgData()
     internal
     view
-    override(ContextUpgradeSafe, BaseRelayRecipient)
-    returns (bytes memory ret)
+    override(ContextUpgradeable, BaseRelayRecipient)
+    returns (bytes calldata)
   {
     return BaseRelayRecipient._msgData();
   }

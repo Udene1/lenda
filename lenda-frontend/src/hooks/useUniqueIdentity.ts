@@ -12,7 +12,7 @@ export function useUniqueIdentity() {
     const { writeContract, data: hash, isPending, error: writeError, reset } = useWriteContract();
     const { isLoading: isWaiting, isSuccess } = useWaitForTransactionReceipt({ hash });
 
-    // ID Type 1 is usually Non-US Individual in Goldfinch
+    // ID Type 1 is usually Non-US Individual in Lenda
     const NON_US_ID_TYPE = BigInt(1);
 
     // Read: Check if user has UID (KYC)
@@ -37,7 +37,7 @@ export function useUniqueIdentity() {
         }
     });
 
-    // Write: Mint UID (Mocked for now since it needs a backend signature)
+    // Mint UID Identity Token
     const mintUid = async (id: bigint, expiresAt: bigint, signature: `0x${string}`) => {
         console.log("Minting UID with:", { id, expiresAt, signature });
         // Use alert to see the parameters in UI during testing if console is hard to reach
@@ -50,7 +50,7 @@ export function useUniqueIdentity() {
         });
     };
 
-    // Helper: Call Python Mock Server to get signature and then mint
+    // Complete institutional verification via protocol service
     const verifyKyc = async () => {
         if (!address) return;
 

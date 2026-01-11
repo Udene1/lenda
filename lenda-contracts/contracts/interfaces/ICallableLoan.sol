@@ -5,7 +5,7 @@ pragma experimental ABIEncoderV2;
 
 import {ILoan} from "./ILoan.sol";
 import {ISchedule} from "./ISchedule.sol";
-import {IGoldfinchConfig} from "./IGoldfinchConfig.sol";
+import {ILendaConfig} from "./ILendaConfig.sol";
 
 /// A LoanPhase represents a period of time during which certain callable loan actions are prohibited.
 /// @param Prefunding Starts when a loan is created and ends at fundableAt.
@@ -77,7 +77,7 @@ interface ICallableLoan is ILoan {
   ================================================================================*/
   /// @notice Initialize the pool. Can only be called once, and should be called in the same transaction as
   ///   contract creation to avoid initialization front-running
-  /// @param _config address of GoldfinchConfig
+  /// @param _config address of LendaConfig
   /// @param _borrower address of borrower, a non-transferrable role for performing privileged actions like
   ///   drawdown
   /// @param _numLockupPeriods the number of periods at the tail end of a principal period during which call requests
@@ -87,7 +87,7 @@ interface ICallableLoan is ILoan {
   ///   payment becomes late
   /// @param _fundableAt earliest time at which the first slice can be funded
   function initialize(
-    IGoldfinchConfig _config,
+    ILendaConfig _config,
     address _borrower,
     uint256 _limit,
     uint256 _interestApr,

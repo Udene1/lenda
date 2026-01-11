@@ -1,17 +1,12 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.6.12;
-pragma experimental ABIEncoderV2;
+pragma solidity ^0.8.0;
 
-import {SafeMath} from "@openzeppelin/contracts-ethereum-package/contracts/math/SafeMath.sol";
-
-/// @notice Library to house logic around the ERC2981 royalty standard. Contracts
-///   using this library should define a ConfigurableRoyaltyStandard.RoyaltyParams
-///   state var and public functions that proxy to the logic here. Contracts should
-///   take care to ensure that a public `setRoyaltyParams` method is only callable
-///   by an admin.
+/**
+ * @title ConfigurableRoyaltyStandard
+ * @notice Library implementing the ERC2981 royalty standard logic.
+ * @author Lenda Protocol
+ */
 library ConfigurableRoyaltyStandard {
-  using SafeMath for uint256;
-
   /// @dev bytes4(keccak256("royaltyInfo(uint256,uint256)")) == 0x2a55205a
   bytes4 internal constant _INTERFACE_ID_ERC2981 = 0x2a55205a;
 
@@ -27,28 +22,29 @@ library ConfigurableRoyaltyStandard {
 
   event RoyaltyParamsSet(address indexed sender, address newReceiver, uint256 newRoyaltyPercent);
 
-  /// @notice Called with the sale price to determine how much royalty
-  //    is owed and to whom.
-  /// @param _tokenId The NFT asset queried for royalty information
-  /// @param _salePrice The sale price of the NFT asset specified by _tokenId
-  /// @return receiver Address that should receive royalties
-  /// @return royaltyAmount The royalty payment amount for _salePrice
+  /**
+   * @notice Called with the sale price to determine how much royalty is owed and to whom.
+   * @param params The stored royalty parameters.
+   * @param _tokenId The NFT asset queried for royalty information.
+   * @param _salePrice The sale price of the NFT asset.
+   * @return receiver Address that should receive royalties.
+   * @return royaltyAmount The royalty payment amount for _salePrice.
+   */
   function royaltyInfo(
     RoyaltyParams storage params,
-    // solhint-disable-next-line no-unused-vars
     uint256 _tokenId,
     uint256 _salePrice
   ) internal view returns (address, uint256) {
-    uint256 royaltyAmount = _salePrice.mul(params.royaltyPercent).div(_PERCENTAGE_DECIMALS);
+    uint256 royaltyAmount = (_salePrice * params.royaltyPercent) / _PERCENTAGE_DECIMALS;
     return (params.receiver, royaltyAmount);
   }
 
-  /// @notice Set royalty params used in `royaltyInfo`. The calling contract should limit
-  ///   public use of this function to owner or using some other access control scheme.
-  /// @param newReceiver The new address which should receive royalties. See `receiver`.
-  /// @param newRoyaltyPercent The new percent of `salePrice` that should be taken for royalties.
-  ///   See `royaltyPercent`.
-  /// @dev The receiver cannot be the null address
+  /**
+   * @notice Set royalty params used in `royaltyInfo`.
+   * @param params The stored royalty parameters.
+   * @param newReceiver The new address which should receive royalties.
+   * @param newRoyaltyPercent The new percent of salePrice for royalties.
+   */
   function setRoyaltyParams(
     RoyaltyParams storage params,
     address newReceiver,

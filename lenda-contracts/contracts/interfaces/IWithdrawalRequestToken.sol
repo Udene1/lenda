@@ -1,16 +1,26 @@
 // SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
 
-pragma solidity 0.6.12;
-pragma experimental ABIEncoderV2;
+import {IERC721EnumerableUpgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC721/extensions/IERC721EnumerableUpgradeable.sol";
 
-import {IERC721Enumerable} from "./openzeppelin/IERC721Enumerable.sol";
-
-interface IWithdrawalRequestToken is IERC721Enumerable {
-  /// @notice Mint a withdrawal request token to `receiver`
-  /// @dev succeeds if and only if called by senior pool
+/**
+ * @title IWithdrawalRequestToken
+ * @notice Interface for the WithdrawalRequestToken NFT in the Lenda protocol.
+ * @author Lenda Protocol
+ */
+interface IWithdrawalRequestToken is IERC721EnumerableUpgradeable {
+  /**
+   * @notice Mint a withdrawal request token to `receiver`
+   * @dev succeeds if and only if called by senior pool
+   * @param receiver The address to receive the token.
+   * @return tokenId The ID of the newly minted token.
+   */
   function mint(address receiver) external returns (uint256 tokenId);
 
-  /// @notice Burn token `tokenId`
-  /// @dev suceeds if and only if called by senior pool
+  /**
+   * @notice Burn token `tokenId`
+   * @dev succeeds if and only if called by senior pool
+   * @param tokenId The ID of the token to burn.
+   */
   function burn(uint256 tokenId) external;
 }

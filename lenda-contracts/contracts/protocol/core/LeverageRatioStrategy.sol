@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: MIT
-
-pragma solidity 0.6.12;
-pragma experimental ABIEncoderV2;
+pragma solidity ^0.8.0;
 
 import {BaseUpgradeablePausable} from "./BaseUpgradeablePausable.sol";
-import {ConfigHelper} from "./ConfigHelper.sol";
 import {ISeniorPoolStrategy} from "../../interfaces/ISeniorPoolStrategy.sol";
 import {ISeniorPool} from "../../interfaces/ISeniorPool.sol";
 import {ITranchedPool} from "../../interfaces/ITranchedPool.sol";
 
+/**
+ * @title LeverageRatioStrategy
+ * @notice Abstract contract for senior pool investment strategies based on leverage ratios.
+ * @author Lenda Protocol
+ */
 abstract contract LeverageRatioStrategy is BaseUpgradeablePausable, ISeniorPoolStrategy {
   uint256 internal constant LEVERAGE_RATIO_DECIMALS = 1e18;
 
@@ -19,7 +21,7 @@ abstract contract LeverageRatioStrategy is BaseUpgradeablePausable, ISeniorPoolS
     if (nSlices == 0) {
       return 0;
     }
-    uint256 sliceIndex = nSlices.sub(1);
+    uint256 sliceIndex = nSlices - 1;
     (
       ITranchedPool.TrancheInfo memory juniorTranche,
       ITranchedPool.TrancheInfo memory seniorTranche
@@ -42,7 +44,7 @@ abstract contract LeverageRatioStrategy is BaseUpgradeablePausable, ISeniorPoolS
     if (nSlices == 0) {
       return 0;
     }
-    uint256 sliceIndex = nSlices.sub(1);
+    uint256 sliceIndex = nSlices - 1;
     (
       ITranchedPool.TrancheInfo memory juniorTranche,
       ITranchedPool.TrancheInfo memory seniorTranche
@@ -58,18 +60,21 @@ abstract contract LeverageRatioStrategy is BaseUpgradeablePausable, ISeniorPoolS
   ) internal view returns (uint256) {
     uint256 juniorCapital = juniorTranche.principalDeposited;
     uint256 existingSeniorCapital = seniorTranche.principalDeposited;
-    uint256 seniorTarget = juniorCapital.mul(getLeverageRatio(pool)).div(LEVERAGE_RATIO_DECIMALS);
+    uint256 seniorTarget = (juniorCapital * getLeverageRatio(pool)) / LEVERAGE_RATIO_DECIMALS;
     if (existingSeniorCapital >= seniorTarget) {
       return 0;
     }
 
-    return seniorTarget.sub(existingSeniorCapital);
+    return seniorTarget - existingSeniorCapital;
   }
 
-  /// @notice Return the junior and senior tranches from a given pool in a specified slice
-  /// @param pool pool to fetch tranches from
-  /// @param sliceIndex slice index to fetch tranches from
-  /// @return (juniorTranche, seniorTranche)
+  /**
+   * @notice Return the junior and senior tranches from a given pool in a specified slice
+   * @param pool pool to fetch tranches from
+   * @param sliceIndex slice index to fetch tranches from
+   * @return juniorTranche
+   * @return seniorTranche
+   */
   function _getTranchesInSlice(
     ITranchedPool pool,
     uint256 sliceIndex
@@ -89,17 +94,21 @@ abstract contract LeverageRatioStrategy is BaseUpgradeablePausable, ISeniorPoolS
     return (juniorTranche, seniorTranche);
   }
 
-  /// @notice Returns the junior tranche id for the given slice index
-  /// @param index slice index
-  /// @return junior tranche id of given slice index
+  /**
+   * @notice Returns the junior tranche id for the given slice index
+   * @param index slice index
+   * @return junior tranche id of given slice index
+   */
   function _sliceIndexToJuniorTrancheId(uint256 index) internal pure returns (uint256) {
-    return index.mul(2).add(2);
+    return (index * 2) + 2;
   }
 
-  /// @notice Returns the senion tranche id for the given slice index
-  /// @param index slice index
-  /// @return senior tranche id of given slice index
+  /**
+   * @notice Returns the senion tranche id for the given slice index
+   * @param index slice index
+   * @return senior tranche id of given slice index
+   */
   function _sliceIndexToSeniorTrancheId(uint256 index) internal pure returns (uint256) {
-    return index.mul(2).add(1);
+    return (index * 2) + 1;
   }
 }

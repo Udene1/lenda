@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity 0.6.12;
+pragma solidity ^0.8.0;
 pragma experimental ABIEncoderV2;
 
-import {AccessControlUpgradeSafe} from "@openzeppelin/contracts-ethereum-package/contracts/access/AccessControl.sol";
-import {ReentrancyGuardUpgradeSafe} from "@openzeppelin/contracts-ethereum-package/contracts/utils/ReentrancyGuard.sol";
-import {Initializable} from "@openzeppelin/contracts-ethereum-package/contracts/Initializable.sol";
-import {SafeMath} from "../../library/SafeMath.sol";
+import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import {PauserPausable} from "./PauserPausable.sol";
+import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
 /**
  * @title BaseUpgradeablePausable contract
@@ -16,17 +15,13 @@ import {PauserPausable} from "./PauserPausable.sol";
  * @author Goldfinch
  */
 
-import {ContextUpgradeSafe} from "@openzeppelin/contracts-ethereum-package/contracts/GSN/Context.sol";
-
 contract BaseUpgradeablePausable is
   Initializable,
-  ContextUpgradeSafe,
-  AccessControlUpgradeSafe,
+  AccessControlUpgradeable,
   PauserPausable,
-  ReentrancyGuardUpgradeSafe
+  ReentrancyGuardUpgradeable
 {
   bytes32 public constant OWNER_ROLE = keccak256("OWNER_ROLE");
-  using SafeMath for uint256;
   // Pre-reserving a few slots in the base contract in case we need to add things in the future.
   // This does not actually take up gas cost or storage cost, but it does reserve the storage slots.
   // See OpenZeppelin's use of this pattern here:
@@ -37,13 +32,13 @@ contract BaseUpgradeablePausable is
   uint256[50] private __gap4;
 
   // solhint-disable-next-line func-name-mixedcase
-  function __BaseUpgradeablePausable__init(address owner) public initializer {
+  function __BaseUpgradeablePausable__init(address owner) public onlyInitializing {
     require(owner != address(0), "Owner cannot be the zero address");
-    __Context_init_unchained();
     __AccessControl_init_unchained();
     __Pausable_init_unchained();
     __ReentrancyGuard_init_unchained();
 
+    _setupRole(DEFAULT_ADMIN_ROLE, owner);
     _setupRole(OWNER_ROLE, owner);
     _setupRole(PAUSER_ROLE, owner);
 

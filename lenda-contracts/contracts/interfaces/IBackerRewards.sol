@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: MIT
-pragma solidity >=0.6.12;
-
-pragma experimental ABIEncoderV2;
+pragma solidity ^0.8.0;
 
 import {ITranchedPool} from "./ITranchedPool.sol";
 
+/**
+ * @title IBackerRewards
+ * @notice Interface for the BackerRewards contract in the Lenda protocol.
+ * @author Lenda Protocol
+ */
 interface IBackerRewards {
   struct BackerRewardsTokenInfo {
     uint256 rewardsClaimed; // gfi claimed
