@@ -11,11 +11,11 @@ const config = createConfig(
         // Your dApp's chains
         chains: [baseSepolia],
         transports: {
-            [baseSepolia.id]: http(),
+            [baseSepolia.id]: http(process.env.NEXT_PUBLIC_RPC_URL || "https://sepolia.base.org"),
         },
 
         // Required API Keys
-        walletConnectProjectId: "bf4945d8b76df49479b69b62648fb162", // Public placeholder or replace with user's
+        walletConnectProjectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || "bf4945d8b76df49479b69b62648fb162",
 
         // Required App Info
         appName: "Lenda Protocol",
