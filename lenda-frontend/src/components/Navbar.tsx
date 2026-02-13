@@ -94,7 +94,7 @@ export function Navbar() {
                     {/* Mobile Menu Toggle */}
                     <button
                         onClick={() => setIsMenuOpen(!isMenuOpen)}
-                        className="p-2 md:hidden text-slate-400 hover:text-white transition-colors"
+                        className="p-2 md:hidden text-white hover:text-blue-400 transition-colors"
                     >
                         {isMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
                     </button>
@@ -104,43 +104,55 @@ export function Navbar() {
             {/* Mobile Menu Overlay */}
             <AnimatePresence>
                 {isMenuOpen && (
-                    <motion.div
-                        initial={{ opacity: 0, scale: 0.95, y: -20 }}
-                        animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.95, y: -20 }}
-                        className="fixed inset-0 top-24 z-40 p-4 md:hidden pointer-events-none"
-                    >
-                        <div className="glass-morphism rounded-3xl border border-white/10 p-4 w-full h-fit pointer-events-auto shadow-2xl">
-                            <div className="flex flex-col gap-1">
-                                {navItems.map((item) => {
-                                    const isActive = pathname === item.href;
-                                    return (
-                                        <Link
-                                            key={item.name}
-                                            href={item.href}
-                                            onClick={() => setIsMenuOpen(false)}
-                                            className={cn(
-                                                "flex items-center gap-4 px-6 py-4 rounded-2xl transition-all duration-200 group",
-                                                isActive
-                                                    ? "text-blue-400 bg-blue-500/10"
-                                                    : "text-slate-400 hover:text-white italic font-bold uppercase"
-                                            )}
-                                        >
-                                            <item.icon className={cn("w-5 h-5", isActive ? "text-blue-400" : "group-hover:text-blue-400")} />
-                                            <span className="font-black text-base tracking-widest">{item.name}</span>
-                                        </Link>
-                                    );
-                                })}
-                            </div>
+                    <>
+                        {/* Backdrop */}
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            onClick={() => setIsMenuOpen(false)}
+                            className="fixed inset-0 z-40 mobile-backdrop md:hidden"
+                        />
 
-                            {isConnected && !isKycVerified && (
-                                <div className="mt-4 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center gap-3">
-                                    <ShieldCheck className="w-5 h-5 text-amber-400" />
-                                    <span className="text-[10px] font-black uppercase tracking-widest text-amber-400 italic">KYC Verification Required</span>
+                        {/* Menu Panel */}
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95, y: -20 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.95, y: -20 }}
+                            className="fixed left-4 right-4 top-24 z-50 md:hidden"
+                        >
+                            <div className="glass-morphism rounded-3xl border border-white/10 p-4 w-full shadow-2xl shadow-black/40">
+                                <div className="flex flex-col gap-1">
+                                    {navItems.map((item) => {
+                                        const isActive = pathname === item.href;
+                                        return (
+                                            <Link
+                                                key={item.name}
+                                                href={item.href}
+                                                onClick={() => setIsMenuOpen(false)}
+                                                className={cn(
+                                                    "flex items-center gap-4 px-6 py-4 rounded-2xl transition-all duration-200 group",
+                                                    isActive
+                                                        ? "text-blue-400 bg-blue-500/15 border border-blue-500/20"
+                                                        : "text-slate-300 hover:text-white hover:bg-white/5"
+                                                )}
+                                            >
+                                                <item.icon className={cn("w-5 h-5", isActive ? "text-blue-400" : "group-hover:text-blue-400")} />
+                                                <span className="font-bold text-base tracking-wide">{item.name}</span>
+                                            </Link>
+                                        );
+                                    })}
                                 </div>
-                            )}
-                        </div>
-                    </motion.div>
+
+                                {isConnected && !isKycVerified && (
+                                    <div className="mt-4 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center gap-3">
+                                        <ShieldCheck className="w-5 h-5 text-amber-400" />
+                                        <span className="text-[10px] font-black uppercase tracking-widest text-amber-400">KYC Verification Required</span>
+                                    </div>
+                                )}
+                            </div>
+                        </motion.div>
+                    </>
                 )}
             </AnimatePresence>
         </nav>

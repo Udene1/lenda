@@ -170,7 +170,7 @@ export default function EarnPage() {
         <main className="min-h-screen bg-slate-950 text-white pb-20">
             <Navbar />
 
-            <div className="max-w-7xl mx-auto px-6 pt-32">
+            <div className="max-w-7xl mx-auto px-4 md:px-6 pt-28 md:pt-32">
                 <header className="mb-12">
                     <motion.div
                         initial={{ opacity: 0, y: 20 }}
@@ -185,14 +185,14 @@ export default function EarnPage() {
                             <h1 className="text-4xl md:text-6xl font-black italic uppercase tracking-tighter">
                                 Senior <span className="text-blue-500">Pool</span>
                             </h1>
-                            <div className="flex items-center gap-4 mt-4">
-                                <p className="text-slate-400 max-w-xl font-medium leading-relaxed">
+                            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 mt-4">
+                                <p className="text-slate-400 max-w-xl font-medium leading-relaxed text-sm md:text-base">
                                     Diversified exposure across all Lenda lending pools.
                                 </p>
                                 <button
                                     onClick={handleFaucet}
                                     disabled={isMinting}
-                                    className="flex items-center gap-2 px-4 py-2 bg-blue-600/10 border border-blue-500/20 rounded-full text-[10px] font-black uppercase tracking-widest text-blue-400 hover:bg-blue-600/20 transition-all"
+                                    className="flex items-center gap-2 px-4 py-2 bg-blue-600/10 border border-blue-500/20 rounded-full text-[10px] font-black uppercase tracking-widest text-blue-400 hover:bg-blue-600/20 transition-all shrink-0"
                                 >
                                     {isMinting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Droplets className="w-3 h-3" />}
                                     Get Test USDC
@@ -200,14 +200,14 @@ export default function EarnPage() {
                             </div>
                         </div>
 
-                        <div className="flex gap-4">
-                            <div className="glass p-6 rounded-3xl border border-white/5 min-w-[200px]">
+                        <div className="grid grid-cols-2 gap-3 md:gap-4 w-full md:w-auto">
+                            <div className="glass p-4 md:p-6 rounded-3xl border border-white/5">
                                 <div className="text-slate-500 text-[10px] font-black uppercase tracking-widest mb-1">Total Value Locked</div>
-                                <div className="text-3xl font-black italic">${tvl.toLocaleString()}</div>
+                                <div className="text-2xl md:text-3xl font-black italic">${tvl.toLocaleString()}</div>
                             </div>
-                            <div className="glass p-6 rounded-3xl border border-white/5 min-w-[200px] relative overflow-hidden">
+                            <div className="glass p-4 md:p-6 rounded-3xl border border-white/5 relative overflow-hidden">
                                 <div className="text-slate-500 text-[10px] font-black uppercase tracking-widest mb-1">Target APY</div>
-                                <div className="text-3xl font-black italic text-green-400">8.4%</div>
+                                <div className="text-2xl md:text-3xl font-black italic text-green-400">8.4%</div>
                                 <div className="absolute bottom-0 left-0 w-full h-1 bg-green-500/20">
                                     <motion.div
                                         initial={{ width: 0 }}

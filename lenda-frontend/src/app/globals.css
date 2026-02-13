@@ -34,9 +34,21 @@
     border: 1px solid rgba(255, 255, 255, 0.1);
   }
 
+  .glass-morphism {
+    background: rgba(10, 18, 36, 0.92);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+  }
+
   .glass-hover:hover {
     background: rgba(30, 41, 59, 0.7);
     border-color: rgba(255, 255, 255, 0.2);
+  }
+
+  .mobile-backdrop {
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
   }
 
   .gradient-text {
