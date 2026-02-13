@@ -56,7 +56,9 @@ export function useUniqueIdentity() {
 
         try {
             console.log("Requesting signature for:", address);
-            const response = await fetch("http://127.0.0.1:5001/sign", {
+            // Replace with your actual Vercel deployment URL
+            const KYC_API_URL = process.env.NEXT_PUBLIC_KYC_URL || "https://udene-kyc.vercel.app";
+            const response = await fetch(`${KYC_API_URL}/sign`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
