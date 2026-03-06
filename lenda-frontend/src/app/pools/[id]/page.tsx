@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, use } from "react";
+import { useState, useEffect, use } from "react";
 import { motion } from "framer-motion";
 import { Navbar } from "@/components/Navbar";
 import {
@@ -13,22 +13,148 @@ import {
     AlertCircle,
     ChevronRight,
     Wallet,
-    Info
+    Info,
+    Loader2,
+    Droplets,
+    CheckCircle2
 } from "lucide-react";
 import Link from "next/link";
 import { usePools } from "@/hooks/usePools";
-import { Loader2 } from "lucide-react";
-import { useAccount } from "wagmi";
+import { useAccount, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
 import { ConnectKitButton } from "connectkit";
+import { useERC20 } from "@/hooks/useERC20";
+import { USDC_ADDRESS } from "@/lib/contracts/addresses";
+import { formatUnits, parseUnits } from "viem";
+import { toast } from "sonner";
+
+// TranchedPool deposit ABI
+const TranchedPoolDepositABI = [
+    {
+        inputs: [
+            { internalType: "uint256", name: "tranche", type: "uint256" },
+            { internalType: "uint256", name: "amount", type: "uint256" }
+        ],
+        name: "deposit",
+        outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
+        stateMutability: "nonpayable",
+        type: "function"
+    }
+] as const;
+
+// Junior tranche ID (tranche 2 in each slice)
+const JUNIOR_TRANCHE_ID = 2;
 
 export default function PoolDetailPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params);
-    const { isConnected } = useAccount();
+    const { address, isConnected } = useAccount();
     const [amount, setAmount] = useState("");
     const { pools, isLoading } = usePools();
 
     // Find the specific pool
     const pool = pools.find(p => p.id.toLowerCase() === (id as string).toLowerCase());
+    const poolAddress = id as `0x${string}`;
+
+    // USDC hook - spender is the pool contract itself
+    const {
+        balance: usdcBalance,
+        allowance: usdcAllowance,
+        approve: approveUsdc,
+        mint: mintUsdc,
+        isPending: isUsdcPending,
+        isSuccess: isUsdcSuccess,
+        refetch: refetchUsdc
+    } = useERC20(USDC_ADDRESS as `0x${string}`, poolAddress);
+
+    // Deposit write
+    const {
+        writeContract: writeDeposit,
+        data: depositHash,
+        isPending: isDepositPending,
+        error: depositError,
+        reset: resetDeposit
+    } = useWriteContract();
+
+    const { isLoading: isDepositWaiting, isSuccess: isDepositSuccess } = useWaitForTransactionReceipt({
+        hash: depositHash
+    });
+
+    // Refetch balances after successful approval
+    useEffect(() => {
+        if (isUsdcSuccess) {
+            refetchUsdc();
+            toast.success("USDC approved successfully!");
+        }
+    }, [isUsdcSuccess, refetchUsdc]);
+
+    // Handle deposit success
+    useEffect(() => {
+        if (isDepositSuccess) {
+            toast.success("Deposit successful! You've received Pool Tokens.");
+            setAmount("");
+            refetchUsdc();
+            resetDeposit();
+        }
+    }, [isDepositSuccess, refetchUsdc, resetDeposit]);
+
+    // Handle deposit errors
+    useEffect(() => {
+        if (depositError) {
+            console.error("Deposit error:", depositError);
+            toast.error(depositError.message?.includes("NA")
+                ? "You need a verified identity (UID) to deposit into this pool."
+                : depositError.message?.includes("TL")
+                    ? "This tranche is currently locked."
+                    : depositError.message?.includes("Not open")
+                        ? "This pool is not yet open for funding."
+                        : "Deposit failed. Please try again."
+            );
+        }
+    }, [depositError]);
+
+    const parsedAmount = amount ? parseUnits(amount, 6) : 0n;
+    const needsApproval = usdcAllowance !== undefined && amount && parsedAmount > usdcAllowance;
+    const userBalance = usdcBalance ? Number(formatUnits(usdcBalance, 6)) : 0;
+    const isProcessing = isDepositPending || isDepositWaiting || isUsdcPending;
+
+    const handleApprove = () => {
+        if (!amount) return;
+        try {
+            approveUsdc(poolAddress, parsedAmount);
+            toast.loading("Approving USDC...", { id: "approve-toast" });
+        } catch (err) {
+            toast.error("Approval failed");
+        }
+    };
+
+    const handleDeposit = () => {
+        if (!amount || parsedAmount === 0n) return;
+        try {
+            writeDeposit({
+                address: poolAddress,
+                abi: TranchedPoolDepositABI,
+                functionName: "deposit",
+                args: [BigInt(JUNIOR_TRANCHE_ID), parsedAmount]
+            });
+            toast.loading("Depositing into pool...", { id: "deposit-toast" });
+        } catch (err) {
+            toast.error("Deposit failed");
+        }
+    };
+
+    const handleMax = () => {
+        if (usdcBalance) {
+            setAmount(formatUnits(usdcBalance, 6));
+        }
+    };
+
+    const handleFaucet = () => {
+        if (!address) {
+            toast.error("Please connect wallet");
+            return;
+        }
+        mintUsdc(address as `0x${string}`, parseUnits("1000", 6));
+        toast.success("Minting 1,000 test USDC...");
+    };
 
     if (isLoading) {
         return (
@@ -176,15 +302,22 @@ export default function PoolDetailPage({ params }: { params: Promise<{ id: strin
                             >
                                 <h3 className="text-sm font-bold uppercase tracking-widest text-slate-400 mb-6">Due Diligence</h3>
                                 <div className="space-y-3">
-                                    {pool.documents.map((doc: any, i: number) => (
-                                        <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-white/5 hover:bg-white/10 transition-colors cursor-pointer group">
-                                            <div className="flex items-center gap-3">
-                                                <FileText className="w-4 h-4 text-blue-500" />
-                                                <span className="text-sm font-medium text-slate-300 group-hover:text-white transition-colors">{doc.name}</span>
+                                    {pool.documents && pool.documents.length > 0 ? (
+                                        pool.documents.map((doc: any, i: number) => (
+                                            <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-white/5 hover:bg-white/10 transition-colors cursor-pointer group">
+                                                <div className="flex items-center gap-3">
+                                                    <FileText className="w-4 h-4 text-blue-500" />
+                                                    <span className="text-sm font-medium text-slate-300 group-hover:text-white transition-colors">{doc.name || "Document"}</span>
+                                                </div>
+                                                <ChevronRight className="w-4 h-4 text-slate-600" />
                                             </div>
-                                            <ChevronRight className="w-4 h-4 text-slate-600" />
+                                        ))
+                                    ) : (
+                                        <div className="text-center py-8">
+                                            <FileText className="w-8 h-8 text-slate-700 mx-auto mb-3" />
+                                            <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">No documents uploaded yet</p>
                                         </div>
-                                    ))}
+                                    )}
                                 </div>
                             </motion.div>
                         </div>
@@ -214,10 +347,28 @@ export default function PoolDetailPage({ params }: { params: Promise<{ id: strin
                                     </div>
                                 ) : (
                                     <div className="space-y-6">
+                                        {/* USDC Balance & Faucet */}
+                                        <div className="flex items-center justify-between">
+                                            <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                                                Your USDC Balance
+                                            </div>
+                                            <button
+                                                onClick={handleFaucet}
+                                                disabled={isUsdcPending}
+                                                className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600/10 border border-blue-500/20 rounded-full text-[9px] font-black uppercase tracking-widest text-blue-400 hover:bg-blue-600/20 transition-all"
+                                            >
+                                                {isUsdcPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Droplets className="w-3 h-3" />}
+                                                Get Test USDC
+                                            </button>
+                                        </div>
+                                        <div className="text-2xl font-black italic text-white -mt-3">
+                                            {userBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-sm text-slate-500">USDC</span>
+                                        </div>
+
+                                        {/* Amount Input */}
                                         <div className="space-y-2">
                                             <div className="flex justify-between text-xs font-bold uppercase tracking-widest text-slate-500">
-                                                <label>Amount (USDC)</label>
-                                                <span>Bal: 0.00</span>
+                                                <label>Amount to Supply (USDC)</label>
                                             </div>
                                             <div className="relative">
                                                 <input
@@ -227,12 +378,16 @@ export default function PoolDetailPage({ params }: { params: Promise<{ id: strin
                                                     className="w-full bg-slate-950 border border-white/10 rounded-xl px-4 py-4 focus:outline-none focus:border-blue-500 transition-all font-bold text-lg"
                                                     placeholder="0.00"
                                                 />
-                                                <button className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-black uppercase tracking-widest bg-blue-500/10 text-blue-500 hover:bg-blue-500 hover:text-white px-2 py-1 rounded transition-colors">
+                                                <button
+                                                    onClick={handleMax}
+                                                    className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-black uppercase tracking-widest bg-blue-500/10 text-blue-500 hover:bg-blue-500 hover:text-white px-2 py-1 rounded transition-colors"
+                                                >
                                                     Max
                                                 </button>
                                             </div>
                                         </div>
 
+                                        {/* Estimated Return */}
                                         <div className="p-4 rounded-xl bg-slate-950 border border-white/5 space-y-3">
                                             <div className="flex justify-between text-sm">
                                                 <span className="text-slate-500">Est. Monthly Return</span>
@@ -244,11 +399,32 @@ export default function PoolDetailPage({ params }: { params: Promise<{ id: strin
                                                 <span className="text-slate-500">Protocol Fee</span>
                                                 <span className="font-bold text-white">0.00%</span>
                                             </div>
+                                            <div className="flex justify-between text-sm">
+                                                <span className="text-slate-500">Tranche</span>
+                                                <span className="font-bold text-blue-400">Junior (Backer)</span>
+                                            </div>
                                         </div>
 
-                                        <button className="btn-primary w-full py-4 text-base font-bold uppercase tracking-wide">
-                                            Deposit & Earn {pool.apy}
-                                        </button>
+                                        {/* Action Buttons */}
+                                        {needsApproval ? (
+                                            <button
+                                                onClick={handleApprove}
+                                                disabled={isProcessing || !amount}
+                                                className="btn-primary w-full py-4 text-base font-bold uppercase tracking-wide flex items-center justify-center gap-3 disabled:opacity-50"
+                                            >
+                                                {isUsdcPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <ShieldCheck className="w-5 h-5" />}
+                                                {isUsdcPending ? "Approving..." : "Approve USDC"}
+                                            </button>
+                                        ) : (
+                                            <button
+                                                onClick={handleDeposit}
+                                                disabled={isProcessing || !amount || parsedAmount === 0n}
+                                                className="btn-primary w-full py-4 text-base font-bold uppercase tracking-wide flex items-center justify-center gap-3 disabled:opacity-50"
+                                            >
+                                                {isProcessing ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}
+                                                {isDepositPending || isDepositWaiting ? "Depositing..." : `Deposit & Earn ${pool.apy}`}
+                                            </button>
+                                        )}
 
                                         <p className="text-[10px] text-center text-slate-500 font-medium">
                                             By depositing, you agree to the Terms of Service.
