@@ -795,7 +795,7 @@ export default function BorrowersPage() {
                                                                 </div>
                                                             </div>
                                                             <div className="flex items-center gap-3">
-                                                                <div className="text-[10px] text-slate-600 font-black uppercase tracking-widest hidden md:block">{doc.ipfsCid.slice(0, 8)}...</div>
+                                                                <div className="text-[10px] text-slate-600 font-black uppercase tracking-widest hidden md:block">{doc.ipfsCid?.slice(0, 8) || "0x..."}...</div>
                                                                 <a
                                                                     href={`https://ipfs.io/ipfs/${doc.ipfsCid}`}
                                                                     target="_blank"

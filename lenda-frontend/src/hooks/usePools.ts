@@ -136,12 +136,13 @@ export function usePools() {
                             verified = profile.isVerified;
                         }
 
-                        docs = await publicClient.readContract({
+                        const response = await publicClient.readContract({
                             address: BORROWER_PROFILE_ADDRESS as `0x${string}`,
                             abi: BorrowerProfileABI,
                             functionName: 'getDocuments',
                             args: [borrowerAddr as `0x${string}`]
                         }) as any[];
+                        if (response) docs = response;
                     } catch (e) {
                         console.error("Error fetching profile for", borrowerAddr, e);
                     }
@@ -180,7 +181,7 @@ export function usePools() {
                         type: "Institutional Loan",
                         riskRating: "A-",
                         minInvestment: "$500 USDC",
-                        documents: docs.map(d => ({ name: d.description, id: d.ipfsCid }))
+                        documents: docs.filter(Boolean).map(d => ({ name: d?.description || "Document", id: d?.ipfsCid || "" }))
                     };
                 });
 
