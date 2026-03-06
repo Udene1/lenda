@@ -42,7 +42,7 @@ const DOC_TYPES = [
 export default function BorrowersPage() {
     const [activeTab, setActiveTab] = useState<"overview" | "facilities" | "financials">("overview");
     const { pools, isLoading: isPoolsLoading } = usePools();
-    const myPools = pools.filter(p => p.borrowerAddress.toLowerCase() === address?.toLowerCase());
+    const myPools = pools.filter(p => p.borrowerAddress?.toLowerCase() === address?.toLowerCase());
 
     const {
         address,
@@ -393,7 +393,7 @@ export default function BorrowersPage() {
                                         <div className="card !p-6 border-emerald-500/10 bg-emerald-500/5 relative overflow-hidden group">
                                             <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Total Limit</div>
                                             <div className="text-3xl font-black italic">
-                                                ${myPools.reduce((acc, p) => acc + Number(p.capacity.replace(/[^0-9.]/g, '')), 0).toLocaleString()}
+                                                ${myPools.reduce((acc, p) => acc + Number(p.capacity?.replace(/[^0-9.]/g, '') || 0), 0).toLocaleString()}
                                             </div>
                                             <div className="absolute -right-4 -bottom-4 opacity-5 group-hover:opacity-10 transition-opacity">
                                                 <TrendingUp className="w-16 h-16" />
@@ -403,7 +403,7 @@ export default function BorrowersPage() {
                                             <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Current Avg. APR</div>
                                             <div className="text-3xl font-black italic">
                                                 {myPools.length > 0
-                                                    ? (myPools.reduce((acc, p) => acc + Number(p.apy.replace(/[^0-9.]/g, '')), 0) / myPools.length).toFixed(2)
+                                                    ? (myPools.reduce((acc, p) => acc + Number(p.apy?.replace(/[^0-9.]/g, '') || 0), 0) / myPools.length).toFixed(2)
                                                     : "0.00"}%
                                             </div>
                                             <div className="absolute -right-4 -bottom-4 opacity-5 group-hover:opacity-10 transition-opacity">
