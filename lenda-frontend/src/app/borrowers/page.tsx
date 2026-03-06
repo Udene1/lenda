@@ -42,7 +42,6 @@ const DOC_TYPES = [
 export default function BorrowersPage() {
     const [activeTab, setActiveTab] = useState<"overview" | "facilities" | "financials">("overview");
     const { pools, isLoading: isPoolsLoading } = usePools();
-    const myPools = pools.filter(p => p.borrowerAddress?.toLowerCase() === address?.toLowerCase());
 
     const {
         address,
@@ -75,6 +74,9 @@ export default function BorrowersPage() {
         receipt: poolReceipt,
         setPoolName
     } = useLendaFactory();
+
+    // Filter pools owned by this borrower - must be after address is declared
+    const myPools = pools.filter(p => p.borrowerAddress?.toLowerCase() === address?.toLowerCase());
 
     const isPending = isProfilePending || isKycPending || isPoolPending;
     const isSuccess = isProfileSuccess || isKycSuccess || isPoolSuccess;

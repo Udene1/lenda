@@ -46,26 +46,43 @@ export function usePools() {
                 setIsLoading(true);
 
                 // 1. Fetch PoolCreated events from Factory
+                // Paginate across 100,000 blocks in 9,900-block chunks to stay within RPC limits
                 const currentBlock = await publicClient.getBlockNumber();
-                // Fetching last 9900 blocks to stay safely within the 10000 limit for free public RPCs
-                const fromBlock = currentBlock > 9900n ? currentBlock - 9900n : 0n;
+                const scanRange = 100000n;
+                const chunkSize = 9900n;
+                const startBlock = currentBlock > scanRange ? currentBlock - scanRange : 0n;
 
-                console.log("Fetching pools from block:", fromBlock.toString());
+                console.log("Fetching pools from block:", startBlock.toString(), "to", currentBlock.toString());
 
-                const logs = await publicClient.getLogs({
-                    address: LENDA_FACTORY_ADDRESS,
-                    event: {
-                        type: 'event',
-                        name: 'PoolCreated',
-                        inputs: [
-                            { type: 'address', name: 'pool', indexed: true },
-                            { type: 'address', name: 'borrower', indexed: true }
-                        ],
-                    },
-                    fromBlock
-                });
+                const poolEvent = {
+                    type: 'event' as const,
+                    name: 'PoolCreated' as const,
+                    inputs: [
+                        { type: 'address' as const, name: 'pool' as const, indexed: true },
+                        { type: 'address' as const, name: 'borrower' as const, indexed: true }
+                    ],
+                };
 
-                console.log(`Found ${logs.length} pools.`);
+                let logs: any[] = [];
+                let cursor = startBlock;
+                while (cursor < currentBlock) {
+                    let end = cursor + chunkSize;
+                    if (end > currentBlock) end = currentBlock;
+                    try {
+                        const batch = await publicClient.getLogs({
+                            address: LENDA_FACTORY_ADDRESS,
+                            event: poolEvent,
+                            fromBlock: cursor,
+                            toBlock: end
+                        });
+                        logs = logs.concat(batch);
+                    } catch (e) {
+                        console.warn("getLogs chunk failed for", cursor.toString(), "-", end.toString(), e);
+                    }
+                    cursor = end + 1n;
+                }
+
+                console.log(`Found ${logs.length} pools across ${((currentBlock - startBlock) / chunkSize).toString()} chunks.`);
 
                 const poolAddresses = logs.map(log => log.args.pool as string);
                 const borrowerAddresses = logs.map(log => log.args.borrower as string);
