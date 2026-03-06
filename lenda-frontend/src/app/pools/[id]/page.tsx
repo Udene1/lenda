@@ -324,7 +324,7 @@ export default function PoolDetailPage({ params }: { params: Promise<{ id: strin
                     </div>
 
                     {/* Sidebar Action Panel */}
-                    <div className="lg:col-span-1">
+                    <div className="lg:col-span-1" id="supply">
                         <motion.div
                             initial={{ opacity: 0, x: 20 }}
                             animate={{ opacity: 1, x: 0 }}

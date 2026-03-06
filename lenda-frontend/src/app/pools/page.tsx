@@ -130,16 +130,24 @@ export default function PoolsPage() {
                                     </div>
                                 </div>
 
-                                <Link
-                                    href={`/pools/${pool.id}`}
-                                    className={`flex items-center justify-center gap-2 w-full py-4 rounded-2xl font-bold uppercase text-xs tracking-[0.2em] transition-all transform active:scale-95 ${pool.status === 'Active'
-                                        ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20'
-                                        : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-white/5'
-                                        }`}
-                                >
-                                    {pool.status === 'Active' ? 'Supply Liquidity' : pool.status === 'Filled' ? 'Pool Filled' : 'View Details'}
-                                    {pool.status === 'Active' && <ArrowUpRight className="w-4 h-4" />}
-                                </Link>
+                                <div className="flex gap-3">
+                                    <Link
+                                        href={`/pools/${pool.id}`}
+                                        className="flex items-center justify-center gap-2 flex-1 py-4 rounded-2xl font-bold uppercase text-xs tracking-[0.2em] transition-all transform active:scale-95 bg-white/5 hover:bg-white/10 text-slate-300 border border-white/5"
+                                    >
+                                        View Details
+                                    </Link>
+                                    <Link
+                                        href={`/pools/${pool.id}#supply`}
+                                        className={`flex items-center justify-center gap-2 flex-1 py-4 rounded-2xl font-bold uppercase text-xs tracking-[0.2em] transition-all transform active:scale-95 ${pool.status === 'Active'
+                                            ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20'
+                                            : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-white/5'
+                                            }`}
+                                    >
+                                        {pool.status === 'Active' ? 'Supply USDC' : pool.status === 'Filled' ? 'Pool Filled' : 'Closed'}
+                                        {pool.status === 'Active' && <ArrowUpRight className="w-4 h-4" />}
+                                    </Link>
+                                </div>
                             </motion.div>
                         ))
                     ) : (
