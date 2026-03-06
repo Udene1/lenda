@@ -1,9 +1,11 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Navbar } from "@/components/Navbar";
 import { useLendaRewards } from "@/hooks/useLendaRewards";
 import { useSeniorPool } from "@/hooks/useSeniorPool";
+import { usePools } from "@/hooks/usePools";
 import {
     Wallet,
     Coins,
@@ -13,17 +15,138 @@ import {
     TrendingUp,
     Download,
     AlertCircle,
-    SquareChartGantt
+    SquareChartGantt,
+    Loader2
 } from "lucide-react";
 import { ConnectKitButton } from "connectkit";
-import { useAccount } from "wagmi";
+import { useAccount, usePublicClient } from "wagmi";
 import { formatUnits } from "viem";
 import Link from "next/link";
+import { POOL_TOKENS_ADDRESS } from "@/lib/contracts/addresses";
+
+// Minimal ABI for PoolTokens (ERC721Enumerable + getTokenInfo)
+const PoolTokensABI = [
+    {
+        inputs: [{ name: "owner", type: "address" }],
+        name: "balanceOf",
+        outputs: [{ name: "", type: "uint256" }],
+        stateMutability: "view",
+        type: "function"
+    },
+    {
+        inputs: [
+            { name: "owner", type: "address" },
+            { name: "index", type: "uint256" }
+        ],
+        name: "tokenOfOwnerByIndex",
+        outputs: [{ name: "", type: "uint256" }],
+        stateMutability: "view",
+        type: "function"
+    },
+    {
+        inputs: [{ name: "tokenId", type: "uint256" }],
+        name: "getTokenInfo",
+        outputs: [
+            {
+                components: [
+                    { name: "pool", type: "address" },
+                    { name: "tranche", type: "uint256" },
+                    { name: "principalAmount", type: "uint256" },
+                    { name: "principalRedeemed", type: "uint256" },
+                    { name: "interestRedeemed", type: "uint256" }
+                ],
+                name: "",
+                type: "tuple"
+            }
+        ],
+        stateMutability: "view",
+        type: "function"
+    }
+] as const;
+
+interface PoolTokenPosition {
+    tokenId: bigint;
+    poolAddress: string;
+    tranche: number;
+    principalAmount: number;
+    principalRedeemed: number;
+    interestRedeemed: number;
+    poolName: string;
+    apy: string;
+}
 
 export default function PortfolioPage() {
     const { address } = useAccount();
+    const publicClient = usePublicClient();
     const { tokenBalance, totalClaimed } = useLendaRewards();
-    const { fiduBalance, sharePrice, assets } = useSeniorPool();
+    const { fiduBalance, sharePrice } = useSeniorPool();
+    const { pools } = usePools();
+
+    const [poolTokenPositions, setPoolTokenPositions] = useState<PoolTokenPosition[]>([]);
+    const [isLoadingPositions, setIsLoadingPositions] = useState(false);
+    const [mounted, setMounted] = useState(false);
+
+    useEffect(() => { setMounted(true); }, []);
+
+    // Fetch the user's pool token positions
+    useEffect(() => {
+        async function fetchPositions() {
+            if (!publicClient || !address) return;
+            setIsLoadingPositions(true);
+            try {
+                const balance = await publicClient.readContract({
+                    address: POOL_TOKENS_ADDRESS as `0x${string}`,
+                    abi: PoolTokensABI,
+                    functionName: "balanceOf",
+                    args: [address]
+                });
+
+                const count = Number(balance);
+                if (count === 0) { setPoolTokenPositions([]); return; }
+
+                const positions: PoolTokenPosition[] = [];
+                for (let i = 0; i < count; i++) {
+                    const tokenId = await publicClient.readContract({
+                        address: POOL_TOKENS_ADDRESS as `0x${string}`,
+                        abi: PoolTokensABI,
+                        functionName: "tokenOfOwnerByIndex",
+                        args: [address, BigInt(i)]
+                    });
+
+                    const info = await publicClient.readContract({
+                        address: POOL_TOKENS_ADDRESS as `0x${string}`,
+                        abi: PoolTokensABI,
+                        functionName: "getTokenInfo",
+                        args: [tokenId]
+                    }) as any;
+
+                    const poolAddr = info.pool || info[0];
+                    const matchingPool = pools.find(
+                        (p) => p.id.toLowerCase() === poolAddr.toLowerCase()
+                    );
+
+                    positions.push({
+                        tokenId,
+                        poolAddress: poolAddr,
+                        tranche: Number(info.tranche || info[1]),
+                        principalAmount: Number(formatUnits(info.principalAmount || info[2], 6)),
+                        principalRedeemed: Number(formatUnits(info.principalRedeemed || info[3], 6)),
+                        interestRedeemed: Number(formatUnits(info.interestRedeemed || info[4], 6)),
+                        poolName: matchingPool?.name || `Pool ${poolAddr.slice(0, 6)}...${poolAddr.slice(-4)}`,
+                        apy: matchingPool?.apy || "—"
+                    });
+                }
+                setPoolTokenPositions(positions);
+            } catch (err) {
+                console.error("Error fetching pool token positions:", err);
+            } finally {
+                setIsLoadingPositions(false);
+            }
+        }
+        fetchPositions();
+    }, [publicClient, address, pools]);
+
+    if (!mounted) return null;
 
     if (!address) {
         return (
@@ -49,8 +172,16 @@ export default function PortfolioPage() {
     const price = sharePrice ? Number(formatUnits(sharePrice, 18)) : 1;
     const seniorPoolValue = userFidu * price;
 
-    // Total NAV (Senior Pool + Lenda Token Value if we had a price for it)
-    const totalNav = seniorPoolValue;
+    // Total value across all pool token positions
+    const tranchedPoolValue = poolTokenPositions.reduce(
+        (sum, p) => sum + (p.principalAmount - p.principalRedeemed),
+        0
+    );
+
+    // Total NAV
+    const totalNav = seniorPoolValue + tranchedPoolValue;
+
+    const hasPositions = userFidu > 0 || poolTokenPositions.length > 0;
 
     return (
         <main className="min-h-screen pb-20">
@@ -62,7 +193,7 @@ export default function PortfolioPage() {
                     <h1 className="text-4xl font-bold italic uppercase tracking-tight">
                         Lender <span className="text-blue-500 text-3xl font-light tracking-widest lowercase">.portfolio</span>
                     </h1>
-                    <p className="text-slate-400 mt-2 font-medium">Track your active positions and managing your protocol rewards.</p>
+                    <p className="text-slate-400 mt-2 font-medium">Track your active positions and manage your protocol rewards.</p>
                 </div>
 
                 {/* Portfolio Stats */}
@@ -138,70 +269,121 @@ export default function PortfolioPage() {
                         </button>
                     </div>
 
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left">
-                            <thead>
-                                <tr className="border-b border-white/5 text-xs font-black text-slate-500 uppercase tracking-widest">
-                                    <th className="pb-4 pl-4">Pool Name</th>
-                                    <th className="pb-4">Balance / Value</th>
-                                    <th className="pb-4">Est. APY</th>
-                                    <th className="pb-4">Status</th>
-                                    <th className="pb-4 pr-4 text-right">Action</th>
-                                </tr>
-                            </thead>
-                            <tbody className="text-sm font-medium">
-                                {userFidu > 0 && (
-                                    <tr className="border-b border-white/5 group hover:bg-white/[0.02] transition-all">
-                                        <td className="py-6 pl-4">
-                                            <div className="flex items-center gap-3">
-                                                <div className="w-10 h-10 rounded-xl bg-blue-600/10 flex items-center justify-center border border-blue-500/20">
-                                                    <TrendingUp className="w-5 h-5 text-blue-500" />
-                                                </div>
-                                                <div>
-                                                    <div className="font-black italic uppercase tracking-tight">Senior Pool</div>
-                                                    <div className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Automated Diversified Pool</div>
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td className="py-6">
-                                            <div className="font-black italic text-lg">${seniorPoolValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                                            <div className="text-xs text-slate-500 font-bold uppercase tracking-widest">{userFidu.toFixed(2)} FIDU</div>
-                                        </td>
-                                        <td className="py-6">
-                                            <div className="text-green-400 font-black italic text-lg">8.4%</div>
-                                        </td>
-                                        <td className="py-6">
-                                            <span className="px-3 py-1 bg-green-500/10 text-green-500 rounded-full text-[10px] font-black uppercase tracking-widest border border-green-500/20">
-                                                Active
-                                            </span>
-                                        </td>
-                                        <td className="py-6 pr-4 text-right">
-                                            <Link
-                                                href="/earn"
-                                                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 rounded-xl text-[10px] font-black uppercase tracking-widest italic hover:bg-blue-500 transition-all shadow-lg shadow-blue-600/20"
-                                            >
-                                                Manage <ArrowUpRight className="w-3 h-3" />
-                                            </Link>
-                                        </td>
+                    {isLoadingPositions ? (
+                        <div className="py-12 flex flex-col items-center gap-3">
+                            <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+                            <p className="text-sm text-slate-500 font-medium">Loading positions...</p>
+                        </div>
+                    ) : (
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left">
+                                <thead>
+                                    <tr className="border-b border-white/5 text-xs font-black text-slate-500 uppercase tracking-widest">
+                                        <th className="pb-4 pl-4">Pool Name</th>
+                                        <th className="pb-4">Balance / Value</th>
+                                        <th className="pb-4">Est. APY</th>
+                                        <th className="pb-4">Status</th>
+                                        <th className="pb-4 pr-4 text-right">Action</th>
                                     </tr>
-                                )}
-
-                                {userFidu === 0 && (
-                                    <tr>
-                                        <td colSpan={5} className="py-12 text-center text-slate-500">
-                                            <div className="flex flex-col items-center gap-4">
-                                                <SquareChartGantt className="w-12 h-12 opacity-20" />
-                                                <p className="text-sm font-medium">No active investments found.</p>
-                                                <Link href="/earn" className="text-xs font-bold text-blue-400 uppercase tracking-widest hover:text-blue-300">
-                                                    Visit Earn to Start Investing
+                                </thead>
+                                <tbody className="text-sm font-medium">
+                                    {/* Senior Pool Position */}
+                                    {userFidu > 0 && (
+                                        <tr className="border-b border-white/5 group hover:bg-white/[0.02] transition-all">
+                                            <td className="py-6 pl-4">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-10 h-10 rounded-xl bg-blue-600/10 flex items-center justify-center border border-blue-500/20">
+                                                        <TrendingUp className="w-5 h-5 text-blue-500" />
+                                                    </div>
+                                                    <div>
+                                                        <div className="font-black italic uppercase tracking-tight">Senior Pool</div>
+                                                        <div className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Automated Diversified Pool</div>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td className="py-6">
+                                                <div className="font-black italic text-lg">${seniorPoolValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                                <div className="text-xs text-slate-500 font-bold uppercase tracking-widest">{userFidu.toFixed(2)} FIDU</div>
+                                            </td>
+                                            <td className="py-6">
+                                                <div className="text-green-400 font-black italic text-lg">8.4%</div>
+                                            </td>
+                                            <td className="py-6">
+                                                <span className="px-3 py-1 bg-green-500/10 text-green-500 rounded-full text-[10px] font-black uppercase tracking-widest border border-green-500/20">
+                                                    Active
+                                                </span>
+                                            </td>
+                                            <td className="py-6 pr-4 text-right">
+                                                <Link
+                                                    href="/earn"
+                                                    className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 rounded-xl text-[10px] font-black uppercase tracking-widest italic hover:bg-blue-500 transition-all shadow-lg shadow-blue-600/20"
+                                                >
+                                                    Manage <ArrowUpRight className="w-3 h-3" />
                                                 </Link>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
+                                            </td>
+                                        </tr>
+                                    )}
+
+                                    {/* Tranched Pool Positions */}
+                                    {poolTokenPositions.map((pos) => {
+                                        const activeValue = pos.principalAmount - pos.principalRedeemed;
+                                        return (
+                                            <tr key={pos.tokenId.toString()} className="border-b border-white/5 group hover:bg-white/[0.02] transition-all">
+                                                <td className="py-6 pl-4">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="w-10 h-10 rounded-xl bg-emerald-600/10 flex items-center justify-center border border-emerald-500/20">
+                                                            <TrendingUp className="w-5 h-5 text-emerald-500" />
+                                                        </div>
+                                                        <div>
+                                                            <div className="font-black italic uppercase tracking-tight">{pos.poolName}</div>
+                                                            <div className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">
+                                                                {pos.tranche === 2 ? "Junior Tranche" : "Senior Tranche"} · Token #{pos.tokenId.toString()}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                                <td className="py-6">
+                                                    <div className="font-black italic text-lg">${activeValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                                    <div className="text-xs text-slate-500 font-bold uppercase tracking-widest">{pos.principalAmount.toFixed(2)} USDC deposited</div>
+                                                </td>
+                                                <td className="py-6">
+                                                    <div className="text-green-400 font-black italic text-lg">{pos.apy}</div>
+                                                </td>
+                                                <td className="py-6">
+                                                    <span className="px-3 py-1 bg-green-500/10 text-green-500 rounded-full text-[10px] font-black uppercase tracking-widest border border-green-500/20">
+                                                        Active
+                                                    </span>
+                                                </td>
+                                                <td className="py-6 pr-4 text-right">
+                                                    <Link
+                                                        href={`/pools/${pos.poolAddress}`}
+                                                        className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 rounded-xl text-[10px] font-black uppercase tracking-widest italic hover:bg-blue-500 transition-all shadow-lg shadow-blue-600/20"
+                                                    >
+                                                        Manage <ArrowUpRight className="w-3 h-3" />
+                                                    </Link>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+
+                                    {/* Empty State */}
+                                    {!hasPositions && (
+                                        <tr>
+                                            <td colSpan={5} className="py-12 text-center text-slate-500">
+                                                <div className="flex flex-col items-center gap-4">
+                                                    <SquareChartGantt className="w-12 h-12 opacity-20" />
+                                                    <p className="text-sm font-medium">No active investments found.</p>
+                                                    <Link href="/pools" className="text-xs font-bold text-blue-400 uppercase tracking-widest hover:text-blue-300">
+                                                        Browse Pools to Start Investing
+                                                    </Link>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
                 </div>
 
                 <div className="mt-8 flex items-start gap-3 p-4 rounded-2xl bg-blue-500/5 border border-blue-500/10 text-blue-400/80">
@@ -215,4 +397,3 @@ export default function PortfolioPage() {
         </main>
     );
 }
-

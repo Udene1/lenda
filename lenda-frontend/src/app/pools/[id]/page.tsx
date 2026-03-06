@@ -51,6 +51,10 @@ export default function PoolDetailPage({ params }: { params: Promise<{ id: strin
     const [amount, setAmount] = useState("");
     const { pools, isLoading } = usePools();
 
+    // Prevent hydration mismatch - wait for client mount before checking wallet
+    const [mounted, setMounted] = useState(false);
+    useEffect(() => { setMounted(true); }, []);
+
     // Determine initial tab from URL hash
     const [activeTab, setActiveTab] = useState<"details" | "supply">("details");
 
@@ -352,7 +356,7 @@ export default function PoolDetailPage({ params }: { params: Promise<{ id: strin
                                     </h3>
                                     <p className="text-slate-400 text-sm mb-8">Deposit USDC into the junior tranche to earn {pool.apy} APY.</p>
 
-                                    {!isConnected ? (
+                                    {!mounted || !isConnected ? (
                                         <div className="text-center py-12">
                                             <Wallet className="w-12 h-12 text-slate-600 mx-auto mb-4" />
                                             <p className="text-slate-400 text-sm mb-6">Connect your wallet to participate in this lending pool.</p>
