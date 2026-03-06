@@ -47,7 +47,8 @@ export function usePools() {
 
                 // 1. Fetch PoolCreated events from Factory
                 const currentBlock = await publicClient.getBlockNumber();
-                const fromBlock = currentBlock > 100000n ? currentBlock - 100000n : 0n;
+                // Fetching last 9900 blocks to stay safely within the 10000 limit for free public RPCs
+                const fromBlock = currentBlock > 9900n ? currentBlock - 9900n : 0n;
 
                 console.log("Fetching pools from block:", fromBlock.toString());
 
