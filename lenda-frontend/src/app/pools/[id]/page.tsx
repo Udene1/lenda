@@ -356,19 +356,11 @@ export default function PoolDetailPage({ params }: { params: Promise<{ id: strin
                                     </h3>
                                     <p className="text-slate-400 text-sm mb-8">Deposit USDC into the junior tranche to earn {pool.apy} APY.</p>
 
-                                    {!mounted || !isConnected ? (
-                                        <div className="text-center py-12">
-                                            <Wallet className="w-12 h-12 text-slate-600 mx-auto mb-4" />
-                                            <p className="text-slate-400 text-sm mb-6">Connect your wallet to participate in this lending pool.</p>
-                                            <div className="flex justify-center">
-                                                <ConnectKitButton />
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <div className="space-y-6">
-                                            {/* Balance + Faucet */}
-                                            <div className="flex items-center justify-between">
-                                                <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">Your USDC Balance</div>
+                                    <div className="space-y-6">
+                                        {/* Balance + Faucet */}
+                                        <div className="flex items-center justify-between">
+                                            <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">Your USDC Balance</div>
+                                            {isConnected && (
                                                 <button
                                                     onClick={handleFaucet}
                                                     disabled={isUsdcPending}
@@ -377,81 +369,85 @@ export default function PoolDetailPage({ params }: { params: Promise<{ id: strin
                                                     {isUsdcPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Droplets className="w-3 h-3" />}
                                                     Get Test USDC
                                                 </button>
-                                            </div>
-                                            <div className="text-3xl font-black italic text-white -mt-3">
-                                                {userBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-sm text-slate-500">USDC</span>
-                                            </div>
-
-                                            {/* Amount Input */}
-                                            <div className="space-y-2">
-                                                <label className="text-xs font-bold uppercase tracking-widest text-slate-500">Amount to Supply (USDC)</label>
-                                                <div className="relative">
-                                                    <input
-                                                        type="number"
-                                                        value={amount}
-                                                        onChange={(e) => setAmount(e.target.value)}
-                                                        className="w-full bg-slate-950 border-2 border-white/10 rounded-2xl px-6 py-5 text-2xl font-black italic focus:outline-none focus:border-blue-500 transition-all placeholder:text-slate-800"
-                                                        placeholder="0.00"
-                                                    />
-                                                    <button
-                                                        onClick={handleMax}
-                                                        className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-black uppercase tracking-widest bg-blue-500/10 text-blue-500 hover:bg-blue-500 hover:text-white px-3 py-1.5 rounded-lg transition-colors"
-                                                    >
-                                                        Max
-                                                    </button>
-                                                </div>
-                                            </div>
-
-                                            {/* Estimates */}
-                                            <div className="p-5 rounded-2xl bg-slate-950 border border-white/5 space-y-3">
-                                                <div className="flex justify-between text-sm">
-                                                    <span className="text-slate-500">Est. Monthly Return</span>
-                                                    <span className="font-bold text-emerald-400">
-                                                        ${amount ? ((Number(amount) * (parseFloat(pool.apy) / 100)) / 12).toFixed(2) : "0.00"}
-                                                    </span>
-                                                </div>
-                                                <div className="flex justify-between text-sm">
-                                                    <span className="text-slate-500">Est. Annual Return</span>
-                                                    <span className="font-bold text-emerald-400">
-                                                        ${amount ? (Number(amount) * (parseFloat(pool.apy) / 100)).toFixed(2) : "0.00"}
-                                                    </span>
-                                                </div>
-                                                <div className="flex justify-between text-sm">
-                                                    <span className="text-slate-500">Protocol Fee</span>
-                                                    <span className="font-bold text-white">0.00%</span>
-                                                </div>
-                                                <div className="flex justify-between text-sm">
-                                                    <span className="text-slate-500">Tranche</span>
-                                                    <span className="font-bold text-blue-400">Junior (Backer)</span>
-                                                </div>
-                                            </div>
-
-                                            {/* Action Button */}
-                                            {needsApproval ? (
-                                                <button
-                                                    onClick={handleApprove}
-                                                    disabled={isProcessing || !amount}
-                                                    className="w-full py-5 bg-blue-600 rounded-2xl font-black uppercase tracking-[0.2em] italic hover:bg-blue-500 transition-all shadow-xl shadow-blue-600/20 flex items-center justify-center gap-3 disabled:opacity-50"
-                                                >
-                                                    {isUsdcPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <ShieldCheck className="w-5 h-5" />}
-                                                    {isUsdcPending ? "Approving..." : "Step 1: Approve USDC"}
-                                                </button>
-                                            ) : (
-                                                <button
-                                                    onClick={handleDeposit}
-                                                    disabled={isProcessing || !amount || parsedAmount === 0n}
-                                                    className="w-full py-5 bg-blue-600 rounded-2xl font-black uppercase tracking-[0.2em] italic hover:bg-blue-500 transition-all shadow-xl shadow-blue-600/20 flex items-center justify-center gap-3 disabled:opacity-50"
-                                                >
-                                                    {isProcessing ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}
-                                                    {isDepositPending || isDepositWaiting ? "Depositing..." : `Deposit & Earn ${pool.apy}`}
-                                                </button>
                                             )}
-
-                                            <p className="text-[10px] text-center text-slate-500 font-medium">
-                                                By depositing, you agree to the Terms of Service.
-                                            </p>
                                         </div>
-                                    )}
+                                        <div className="text-3xl font-black italic text-white -mt-3">
+                                            {isConnected ? userBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—"} <span className="text-sm text-slate-500">USDC</span>
+                                        </div>
+
+                                        {/* Amount Input */}
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-bold uppercase tracking-widest text-slate-500">Amount to Supply (USDC)</label>
+                                            <div className="relative">
+                                                <input
+                                                    type="number"
+                                                    value={amount}
+                                                    onChange={(e) => setAmount(e.target.value)}
+                                                    className="w-full bg-slate-950 border-2 border-white/10 rounded-2xl px-6 py-5 text-2xl font-black italic focus:outline-none focus:border-blue-500 transition-all placeholder:text-slate-800"
+                                                    placeholder="0.00"
+                                                />
+                                                <button
+                                                    onClick={handleMax}
+                                                    className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-black uppercase tracking-widest bg-blue-500/10 text-blue-500 hover:bg-blue-500 hover:text-white px-3 py-1.5 rounded-lg transition-colors"
+                                                >
+                                                    Max
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        {/* Estimates */}
+                                        <div className="p-5 rounded-2xl bg-slate-950 border border-white/5 space-y-3">
+                                            <div className="flex justify-between text-sm">
+                                                <span className="text-slate-500">Est. Monthly Return</span>
+                                                <span className="font-bold text-emerald-400">
+                                                    ${amount ? ((Number(amount) * (parseFloat(pool.apy) / 100)) / 12).toFixed(2) : "0.00"}
+                                                </span>
+                                            </div>
+                                            <div className="flex justify-between text-sm">
+                                                <span className="text-slate-500">Est. Annual Return</span>
+                                                <span className="font-bold text-emerald-400">
+                                                    ${amount ? (Number(amount) * (parseFloat(pool.apy) / 100)).toFixed(2) : "0.00"}
+                                                </span>
+                                            </div>
+                                            <div className="flex justify-between text-sm">
+                                                <span className="text-slate-500">Protocol Fee</span>
+                                                <span className="font-bold text-white">0.00%</span>
+                                            </div>
+                                            <div className="flex justify-between text-sm">
+                                                <span className="text-slate-500">Tranche</span>
+                                                <span className="font-bold text-blue-400">Junior (Backer)</span>
+                                            </div>
+                                        </div>
+
+                                        {/* Action Button — Connect or Deposit */}
+                                        {!isConnected ? (
+                                            <div className="flex justify-center">
+                                                <ConnectKitButton />
+                                            </div>
+                                        ) : needsApproval ? (
+                                            <button
+                                                onClick={handleApprove}
+                                                disabled={isProcessing || !amount}
+                                                className="w-full py-5 bg-blue-600 rounded-2xl font-black uppercase tracking-[0.2em] italic hover:bg-blue-500 transition-all shadow-xl shadow-blue-600/20 flex items-center justify-center gap-3 disabled:opacity-50"
+                                            >
+                                                {isUsdcPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <ShieldCheck className="w-5 h-5" />}
+                                                {isUsdcPending ? "Approving..." : "Step 1: Approve USDC"}
+                                            </button>
+                                        ) : (
+                                            <button
+                                                onClick={handleDeposit}
+                                                disabled={isProcessing || !amount || parsedAmount === 0n}
+                                                className="w-full py-5 bg-blue-600 rounded-2xl font-black uppercase tracking-[0.2em] italic hover:bg-blue-500 transition-all shadow-xl shadow-blue-600/20 flex items-center justify-center gap-3 disabled:opacity-50"
+                                            >
+                                                {isProcessing ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}
+                                                {isDepositPending || isDepositWaiting ? "Depositing..." : `Deposit & Earn ${pool.apy}`}
+                                            </button>
+                                        )}
+
+                                        <p className="text-[10px] text-center text-slate-500 font-medium">
+                                            By depositing, you agree to the Terms of Service.
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
 

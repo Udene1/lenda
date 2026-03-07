@@ -91,9 +91,13 @@ export default function PortfolioPage() {
     // Fetch the user's pool token positions
     useEffect(() => {
         async function fetchPositions() {
-            if (!publicClient || !address) return;
+            if (!publicClient || !address) {
+                console.log("Portfolio: skipping fetch - no publicClient or address");
+                return;
+            }
             setIsLoadingPositions(true);
             try {
+                console.log("Portfolio: fetching pool token balance for", address);
                 const balance = await publicClient.readContract({
                     address: POOL_TOKENS_ADDRESS as `0x${string}`,
                     abi: PoolTokensABI,
@@ -102,43 +106,64 @@ export default function PortfolioPage() {
                 });
 
                 const count = Number(balance);
-                if (count === 0) { setPoolTokenPositions([]); return; }
+                console.log("Portfolio: user owns", count, "pool tokens");
+
+                if (count === 0) {
+                    setPoolTokenPositions([]);
+                    setIsLoadingPositions(false);
+                    return;
+                }
 
                 const positions: PoolTokenPosition[] = [];
                 for (let i = 0; i < count; i++) {
-                    const tokenId = await publicClient.readContract({
-                        address: POOL_TOKENS_ADDRESS as `0x${string}`,
-                        abi: PoolTokensABI,
-                        functionName: "tokenOfOwnerByIndex",
-                        args: [address, BigInt(i)]
-                    });
+                    try {
+                        const tokenId = await publicClient.readContract({
+                            address: POOL_TOKENS_ADDRESS as `0x${string}`,
+                            abi: PoolTokensABI,
+                            functionName: "tokenOfOwnerByIndex",
+                            args: [address, BigInt(i)]
+                        });
 
-                    const info = await publicClient.readContract({
-                        address: POOL_TOKENS_ADDRESS as `0x${string}`,
-                        abi: PoolTokensABI,
-                        functionName: "getTokenInfo",
-                        args: [tokenId]
-                    }) as any;
+                        console.log("Portfolio: reading info for token", tokenId.toString());
 
-                    const poolAddr = info.pool || info[0];
-                    const matchingPool = pools.find(
-                        (p) => p.id.toLowerCase() === poolAddr.toLowerCase()
-                    );
+                        const info = await publicClient.readContract({
+                            address: POOL_TOKENS_ADDRESS as `0x${string}`,
+                            abi: PoolTokensABI,
+                            functionName: "getTokenInfo",
+                            args: [tokenId]
+                        });
 
-                    positions.push({
-                        tokenId,
-                        poolAddress: poolAddr,
-                        tranche: Number(info.tranche || info[1]),
-                        principalAmount: Number(formatUnits(info.principalAmount || info[2], 6)),
-                        principalRedeemed: Number(formatUnits(info.principalRedeemed || info[3], 6)),
-                        interestRedeemed: Number(formatUnits(info.interestRedeemed || info[4], 6)),
-                        poolName: matchingPool?.name || `Pool ${poolAddr.slice(0, 6)}...${poolAddr.slice(-4)}`,
-                        apy: matchingPool?.apy || "—"
-                    });
+                        console.log("Portfolio: token info raw:", JSON.stringify(info, (_, v) => typeof v === 'bigint' ? v.toString() : v));
+
+                        // viem returns struct as object with named fields
+                        const poolAddr = (info as any).pool ?? (info as any)[0];
+                        const tranche = (info as any).tranche ?? (info as any)[1];
+                        const principalAmt = (info as any).principalAmount ?? (info as any)[2];
+                        const principalRed = (info as any).principalRedeemed ?? (info as any)[3];
+                        const interestRed = (info as any).interestRedeemed ?? (info as any)[4];
+
+                        const matchingPool = pools.find(
+                            (p) => p.id.toLowerCase() === String(poolAddr).toLowerCase()
+                        );
+
+                        positions.push({
+                            tokenId,
+                            poolAddress: String(poolAddr),
+                            tranche: Number(tranche),
+                            principalAmount: Number(formatUnits(BigInt(principalAmt), 6)),
+                            principalRedeemed: Number(formatUnits(BigInt(principalRed), 6)),
+                            interestRedeemed: Number(formatUnits(BigInt(interestRed), 6)),
+                            poolName: matchingPool?.name || `Pool ${String(poolAddr).slice(0, 6)}...${String(poolAddr).slice(-4)}`,
+                            apy: matchingPool?.apy || "—"
+                        });
+                    } catch (tokenErr) {
+                        console.error("Portfolio: error reading token at index", i, tokenErr);
+                    }
                 }
+                console.log("Portfolio: resolved", positions.length, "positions");
                 setPoolTokenPositions(positions);
             } catch (err) {
-                console.error("Error fetching pool token positions:", err);
+                console.error("Portfolio: error fetching pool token positions:", err);
             } finally {
                 setIsLoadingPositions(false);
             }
