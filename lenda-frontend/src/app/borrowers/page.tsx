@@ -43,7 +43,14 @@ const DOC_TYPES = [
 
 export default function BorrowersPage() {
     const [activeTab, setActiveTab] = useState<"overview" | "facilities" | "financials">("overview");
-    const { pools, isLoading: isPoolsLoading } = usePools();
+    const { pools, isLoading: isPoolsLoading, refetch: refetchPools, lastUpdated: poolsLastUpdated } = usePools();
+    const [isRefreshing, setIsRefreshing] = useState(false);
+
+    const handleRefresh = async () => {
+        setIsRefreshing(true);
+        await refetchPools();
+        setIsRefreshing(false);
+    };
 
     const {
         address,

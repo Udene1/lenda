@@ -101,17 +101,25 @@ export function usePools() {
                 allowFailure: true
             });
 
+            if (!results || results.length === 0) {
+                setPools([]);
+                setIsLoading(false);
+                return;
+            }
+
             // 3. Extract CreditLine addresses and Prepare second Multicall
             const poolInfos: any[] = [];
             const creditLineCalls: any[] = [];
 
             for (let i = 0; i < poolAddresses.length; i++) {
                 const baseIdx = i * 5;
+                if (!results[baseIdx]) continue;
+
                 const creditLineAddr = results[baseIdx].result as `0x${string}`;
-                const createdAt = results[baseIdx + 1].result;
-                const profile = results[baseIdx + 2].result as any;
-                const documents = results[baseIdx + 3].result as any[];
-                const customName = results[baseIdx + 4].result as string;
+                const createdAt = results[baseIdx + 1]?.result;
+                const profile = results[baseIdx + 2]?.result as any;
+                const documents = results[baseIdx + 3]?.result as any[];
+                const customName = results[baseIdx + 4]?.result as string;
 
                 poolInfos.push({
                     poolAddr: poolAddresses[i],
@@ -159,7 +167,7 @@ export function usePools() {
                     name: info.customName || `${profileName} - creditLine`,
                     borrower: profileName,
                     borrowerAddress: info.borrowerAddr,
-                    apy: `${(Number(apr) / 1e16).toFixed(2)}%`,
+                    apy: `${(Number(formatUnits(apr, 18)) * 100).toFixed(2)}%`,
                     capacity: `$${capacity.toLocaleString()}`,
                     filled: `$${currentBalance.toLocaleString()}`,
                     progress: progress || 100, // Fallback to 100 if we can't determine
