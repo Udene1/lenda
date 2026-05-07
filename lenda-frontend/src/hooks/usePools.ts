@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { usePublicClient } from "wagmi";
 import {
     LENDA_FACTORY_ADDRESS,
@@ -17,7 +17,7 @@ import { formatUnits } from "viem";
 export interface PoolData {
     id: string;
     name: string;
-    borrower: string;
+    borrower: string; // The result of getProfile().name
     borrowerAddress: string;
     apy: string;
     capacity: string;
@@ -36,183 +36,159 @@ export interface PoolData {
 export function usePools() {
     const [pools, setPools] = useState<PoolData[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [lastUpdated, setLastUpdated] = useState<number>(0);
     const publicClient = usePublicClient();
 
-    useEffect(() => {
-        async function fetchPools() {
-            if (!publicClient) return;
+    const fetchPools = useCallback(async () => {
+        if (!publicClient) return;
 
-            try {
-                setIsLoading(true);
+        try {
+            setIsLoading(true);
 
-                // 1. Fetch PoolCreated events from Factory
-                // Paginate across 100,000 blocks in 9,900-block chunks to stay within RPC limits
-                const currentBlock = await publicClient.getBlockNumber();
-                const scanRange = 100000n;
-                const chunkSize = 9900n;
-                const startBlock = currentBlock > scanRange ? currentBlock - scanRange : 0n;
+            // 1. Fetch PoolCreated events from Factory
+            const currentBlock = await publicClient.getBlockNumber();
+            const scanRange = 10000000n; // ~230 days at 2s/block, plenty for 4-6 months
+            const chunkSize = 50000n;
+            const startBlock = currentBlock > scanRange ? currentBlock - scanRange : 0n;
 
-                console.log("Fetching pools from block:", startBlock.toString(), "to", currentBlock.toString());
+            const poolEvent = {
+                type: 'event' as const,
+                name: 'PoolCreated' as const,
+                inputs: [
+                    { type: 'address' as const, name: 'pool' as const, indexed: true },
+                    { type: 'address' as const, name: 'borrower' as const, indexed: true }
+                ],
+            };
 
-                const poolEvent = {
-                    type: 'event' as const,
-                    name: 'PoolCreated' as const,
-                    inputs: [
-                        { type: 'address' as const, name: 'pool' as const, indexed: true },
-                        { type: 'address' as const, name: 'borrower' as const, indexed: true }
-                    ],
-                };
-
-                let logs: any[] = [];
-                let cursor = startBlock;
-                while (cursor < currentBlock) {
-                    let end = cursor + chunkSize;
-                    if (end > currentBlock) end = currentBlock;
-                    try {
-                        const batch = await publicClient.getLogs({
-                            address: LENDA_FACTORY_ADDRESS,
-                            event: poolEvent,
-                            fromBlock: cursor,
-                            toBlock: end
-                        });
-                        logs = logs.concat(batch);
-                    } catch (e) {
-                        console.warn("getLogs chunk failed for", cursor.toString(), "-", end.toString(), e);
-                    }
-                    cursor = end + 1n;
+            let logs: any[] = [];
+            let cursor = startBlock;
+            while (cursor < currentBlock) {
+                let end = cursor + chunkSize;
+                if (end > currentBlock) end = currentBlock;
+                try {
+                    const batch = await publicClient.getLogs({
+                        address: LENDA_FACTORY_ADDRESS,
+                        event: poolEvent,
+                        fromBlock: cursor,
+                        toBlock: end
+                    });
+                    logs = logs.concat(batch);
+                } catch (e) {
+                    console.warn(`Logs fetch failed for block range ${cursor}-${end}:`, e);
                 }
+                cursor = end + 1n;
+            }
 
-                console.log(`Found ${logs.length} pools across ${((currentBlock - startBlock) / chunkSize).toString()} chunks.`);
+            if (logs.length === 0) {
+                setPools([]);
+                return;
+            }
 
-                const poolAddresses = logs.map(log => log.args.pool as string);
-                const borrowerAddresses = logs.map(log => log.args.borrower as string);
+            // 2. Prepare Multicall for Pool & Profile Data
+            const poolAddresses = logs.map(log => log.args.pool as `0x${string}`);
+            const borrowerAddresses = logs.map(log => log.args.borrower as `0x${string}`);
 
-                const poolDataPromises = poolAddresses.map(async (poolAddr, index) => {
-                    const borrowerAddr = borrowerAddresses[index];
+            const poolDetailsCalls = poolAddresses.flatMap((poolAddr, i) => [
+                { address: poolAddr, abi: TranchedPoolABI, functionName: 'creditLine' },
+                { address: poolAddr, abi: TranchedPoolABI, functionName: 'createdAt' },
+                { address: BORROWER_PROFILE_ADDRESS as `0x${string}`, abi: BorrowerProfileABI, functionName: 'getProfile', args: [borrowerAddresses[i]] },
+                { address: BORROWER_PROFILE_ADDRESS as `0x${string}`, abi: BorrowerProfileABI, functionName: 'getDocuments', args: [borrowerAddresses[i]] },
+                { address: METADATA_REGISTRY_ADDRESS as `0x${string}`, abi: MetadataRegistryABI, functionName: 'poolNames', args: [poolAddr] }
+            ]);
 
-                    // 2. Fetch Pool Details
-                    const [creditLineAddr, createdAt, juniorFee] = await Promise.all([
-                        publicClient.readContract({
-                            address: poolAddr as `0x${string}`,
-                            abi: TranchedPoolABI,
-                            functionName: 'creditLine'
-                        }),
-                        publicClient.readContract({
-                            address: poolAddr as `0x${string}`,
-                            abi: TranchedPoolABI,
-                            functionName: 'createdAt'
-                        }),
-                        publicClient.readContract({
-                            address: poolAddr as `0x${string}`,
-                            abi: TranchedPoolABI,
-                            functionName: 'juniorFeePercent'
-                        })
-                    ]);
+            const results = await publicClient.multicall({
+                contracts: poolDetailsCalls as any[],
+                allowFailure: true
+            });
 
-                    // 3. Fetch CreditLine Details
-                    const [limit, interestApr, balance, termEndTime] = await Promise.all([
-                        publicClient.readContract({
-                            address: creditLineAddr as `0x${string}`,
-                            abi: CreditLineABI,
-                            functionName: 'limit'
-                        }),
-                        publicClient.readContract({
-                            address: creditLineAddr as `0x${string}`,
-                            abi: CreditLineABI,
-                            functionName: 'interestApr'
-                        }),
-                        publicClient.readContract({
-                            address: creditLineAddr as `0x${string}`,
-                            abi: CreditLineABI,
-                            functionName: 'balance'
-                        }),
-                        publicClient.readContract({
-                            address: creditLineAddr as `0x${string}`,
-                            abi: CreditLineABI,
-                            functionName: 'termEndTime'
-                        })
-                    ]);
+            // 3. Extract CreditLine addresses and Prepare second Multicall
+            const poolInfos: any[] = [];
+            const creditLineCalls: any[] = [];
 
-                    // 4. Fetch Borrower Profile
-                    let profileName = "Unknown Borrower";
-                    let profileDesc = "Standard institutional lending facility.";
-                    let verified = false;
-                    let docs: any[] = [];
+            for (let i = 0; i < poolAddresses.length; i++) {
+                const baseIdx = i * 5;
+                const creditLineAddr = results[baseIdx].result as `0x${string}`;
+                const createdAt = results[baseIdx + 1].result;
+                const profile = results[baseIdx + 2].result as any;
+                const documents = results[baseIdx + 3].result as any[];
+                const customName = results[baseIdx + 4].result as string;
 
-                    try {
-                        const profile = await publicClient.readContract({
-                            address: BORROWER_PROFILE_ADDRESS as `0x${string}`,
-                            abi: BorrowerProfileABI,
-                            functionName: 'getProfile',
-                            args: [borrowerAddr as `0x${string}`]
-                        }) as any;
-
-                        if (profile && profile.name) {
-                            profileName = profile.name;
-                            profileDesc = profile.description;
-                            verified = profile.isVerified;
-                        }
-
-                        const response = await publicClient.readContract({
-                            address: BORROWER_PROFILE_ADDRESS as `0x${string}`,
-                            abi: BorrowerProfileABI,
-                            functionName: 'getDocuments',
-                            args: [borrowerAddr as `0x${string}`]
-                        }) as any[];
-                        if (response) docs = response;
-                    } catch (e) {
-                        console.error("Error fetching profile for", borrowerAddr, e);
-                    }
-
-                    const capacity = Number(formatUnits(limit as bigint, 6));
-                    const filled = capacity; // For simplicity in simple view, or we can fetch totalDeposited
-                    // Note: In Lenda, 'limit' on CL is actually the amount drawn down or the max allowed.
-                    // Let's use 100% progress for now if it's an existing pool, or calculate properly.
-
-                    // 5. Fetch Pool Name from Metadata Registry
-                    let customName = "";
-                    try {
-                        customName = await publicClient.readContract({
-                            address: METADATA_REGISTRY_ADDRESS as `0x${string}`,
-                            abi: MetadataRegistryABI,
-                            functionName: 'poolNames',
-                            args: [poolAddr as `0x${string}`]
-                        }) as string;
-                    } catch (e) {
-                        console.error("Error fetching name for", poolAddr, e);
-                    }
-
-                    return {
-                        id: poolAddr,
-                        name: customName || `${profileName} - Credit Line`,
-                        borrower: profileName,
-                        borrowerAddress: borrowerAddr,
-                        apy: `${(Number(interestApr) / 1e16).toFixed(2)}%`,
-                        capacity: `$${capacity.toLocaleString()}`,
-                        filled: `$${capacity.toLocaleString()}`,
-                        progress: 100,
-                        term: "12 Months",
-                        status: "Active",
-                        verified: verified,
-                        description: profileDesc,
-                        type: "Institutional Loan",
-                        riskRating: "A-",
-                        minInvestment: "$500 USDC",
-                        documents: docs.filter(Boolean).map(d => ({ name: d?.description || "Document", id: d?.ipfsCid || "" }))
-                    };
+                poolInfos.push({
+                    poolAddr: poolAddresses[i],
+                    borrowerAddr: borrowerAddresses[i],
+                    creditLineAddr,
+                    createdAt,
+                    profile,
+                    documents: (documents || []).filter(Boolean),
+                    customName
                 });
 
-                const resolvedPools = await Promise.all(poolDataPromises);
-                setPools(resolvedPools);
-            } catch (error) {
-                console.error("Error fetching pools:", error);
-            } finally {
-                setIsLoading(false);
+                if (creditLineAddr) {
+                    creditLineCalls.push(
+                        { address: creditLineAddr, abi: CreditLineABI, functionName: 'limit' },
+                        { address: creditLineAddr, abi: CreditLineABI, functionName: 'interestApr' },
+                        { address: creditLineAddr, abi: CreditLineABI, functionName: 'balance' },
+                        { address: creditLineAddr, abi: CreditLineABI, functionName: 'termEndTime' }
+                    );
+                }
             }
-        }
 
-        fetchPools();
+            const clResults = await publicClient.multicall({
+                contracts: creditLineCalls as any[],
+                allowFailure: true
+            });
+
+            // 4. Assemble Final Pool Data
+            const finalPools: PoolData[] = poolInfos.map((info, i) => {
+                const clIdx = i * 4;
+                const limit = clResults[clIdx]?.result as bigint || 0n;
+                const apr = clResults[clIdx + 1]?.result as bigint || 0n;
+                const balance = clResults[clIdx + 2]?.result as bigint || 0n;
+                const termEnd = clResults[clIdx + 3]?.result as bigint || 0n;
+
+                const capacity = Number(formatUnits(limit, 6));
+                const currentBalance = Number(formatUnits(balance, 6));
+                
+                // Progress calculation or fixed 100 if fully funded previously
+                const progress = capacity > 0 ? Math.min(100, Math.round((currentBalance / capacity) * 100)) : 100;
+
+                const profileName = info.profile?.name || "Premium Borrower";
+                
+                return {
+                    id: info.poolAddr,
+                    name: info.customName || `${profileName} - creditLine`,
+                    borrower: profileName,
+                    borrowerAddress: info.borrowerAddr,
+                    apy: `${(Number(apr) / 1e16).toFixed(2)}%`,
+                    capacity: `$${capacity.toLocaleString()}`,
+                    filled: `$${currentBalance.toLocaleString()}`,
+                    progress: progress || 100, // Fallback to 100 if we can't determine
+                    term: "12 Months",
+                    status: "Active",
+                    verified: info.profile?.isVerified || false,
+                    description: info.profile?.description || "Institutional lending facility.",
+                    type: "Institutional Loan",
+                    riskRating: "A-",
+                    minInvestment: "$500 USDC",
+                    documents: info.documents.map((d: any) => ({ 
+                        name: d?.description || "Document", 
+                        id: d?.ipfsCid || "" 
+                    }))
+                };
+            });
+
+            setPools(finalPools);
+            setLastUpdated(Date.now());
+        } catch (error) {
+            console.error("Error fetching pools:", error);
+        } finally {
+            setIsLoading(false);
+        }
     }, [publicClient]);
 
-    return { pools, isLoading };
+    useEffect(() => {
+        fetchPools();
+    }, [fetchPools]);
+
+    return { pools, isLoading, refetch: fetchPools, lastUpdated };
 }

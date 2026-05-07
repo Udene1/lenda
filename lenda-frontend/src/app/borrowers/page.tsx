@@ -24,11 +24,13 @@ import {
     Zap,
     TrendingUp,
     ArrowUpRight,
-    Tag
+    Tag,
+    RefreshCcw
 } from "lucide-react";
-import { decodeEventLog } from "viem";
+import { decodeEventLog, formatUnits, parseUnits } from "viem";
 import { LendaFactoryABI } from "@/lib/contracts/abis";
 import { ConnectKitButton } from "connectkit";
+import { useAccount } from "wagmi";
 
 const DOC_TYPES = [
     "Income Statement",
@@ -258,6 +260,26 @@ export default function BorrowersPage() {
                         </p>
                     </div>
 
+                    <div className="flex items-center gap-4">
+                        <div className="flex flex-col items-end">
+                             <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest leading-none mb-1">
+                                Data synchronized
+                             </div>
+                             <div className="text-[10px] font-medium text-blue-400/60 lowercase leading-none">
+                                {poolsLastUpdated ? new Date(poolsLastUpdated).toLocaleTimeString() : 'connecting...'}
+                             </div>
+                        </div>
+                        
+                        <button 
+                            onClick={handleRefresh}
+                            disabled={isRefreshing}
+                            className={`glass p-3 rounded-2xl border border-white/10 hover:bg-white/5 transition-all text-slate-400 ${isRefreshing ? 'animate-spin-slow text-blue-500' : ''}`}
+                            title="Refresh data"
+                        >
+                            <RefreshCcw className="w-5 h-5" />
+                        </button>
+                    </div>
+
                     <div className="flex flex-wrap gap-2 p-1.5 bg-white/[0.02] border border-white/5 rounded-2xl w-full lg:w-auto">
                         <button
                             onClick={() => setActiveTab("overview")}
@@ -432,7 +454,7 @@ export default function BorrowersPage() {
                                                     </div>
                                                 </div>
 
-                                                <div className="prose prose-invert max-w-none mb-8">
+                                                 <div className="prose prose-invert max-w-none mb-8">
                                                     <p className="text-slate-400 font-medium leading-relaxed">{profile?.description}</p>
                                                 </div>
 

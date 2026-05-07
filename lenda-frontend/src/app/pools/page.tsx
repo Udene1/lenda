@@ -7,6 +7,7 @@ import {
     TrendingUp,
     Clock,
     ArrowUpRight,
+    RefreshCcw,
     Users,
     Search,
     Filter,
@@ -15,9 +16,17 @@ import {
 import { usePools } from "@/hooks/usePools";
 import { Loader2 } from "lucide-react";
 import Link from "next/link";
+import { useState } from "react";
 
 export default function PoolsPage() {
-    const { pools, isLoading } = usePools();
+    const { pools, isLoading, refetch, lastUpdated } = usePools();
+    const [isRefreshing, setIsRefreshing] = useState(false);
+
+    const handleRefresh = async () => {
+        setIsRefreshing(true);
+        await refetch();
+        setIsRefreshing(false);
+    };
 
     if (isLoading) {
         return (
@@ -46,6 +55,24 @@ export default function PoolsPage() {
                     </div>
 
                     <div className="flex items-center gap-3">
+                        <div className="flex flex-col items-end mr-2">
+                             <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest leading-none mb-1">
+                                Data synchronized
+                             </div>
+                             <div className="text-[10px] font-medium text-blue-400/60 lowercase leading-none">
+                                {lastUpdated ? new Date(lastUpdated).toLocaleTimeString() : 'connecting...'}
+                             </div>
+                        </div>
+                        
+                        <button 
+                            onClick={handleRefresh}
+                            disabled={isRefreshing}
+                            className={`glass p-2.5 rounded-xl border border-white/10 hover:bg-white/5 transition-all text-slate-400 ${isRefreshing ? 'animate-spin-slow text-blue-500' : ''}`}
+                            title="Refresh pools"
+                        >
+                            <RefreshCcw className="w-5 h-5" />
+                        </button>
+
                         <div className="glass flex items-center px-4 py-2 rounded-xl border border-white/10">
                             <Search className="w-4 h-4 text-slate-500 mr-2" />
                             <input
