@@ -47,9 +47,9 @@ export function usePools() {
 
             // 1. Fetch PoolCreated events from Factory
             const currentBlock = await publicClient.getBlockNumber();
-            const scanRange = 10000000n; // ~230 days at 2s/block, plenty for 4-6 months
-            const chunkSize = 50000n;
-            const startBlock = currentBlock > scanRange ? currentBlock - scanRange : 0n;
+            const scanRange = 4000000n; // ~90 days at 2s/block
+            const chunkSize = 10000n;
+            const startBlock = currentBlock > scanRange ? currentBlock - scanRange : 1n;
 
             const poolEvent = {
                 type: 'event' as const,
@@ -60,6 +60,8 @@ export function usePools() {
                 ],
             };
 
+            console.log(`Scanning Base Sepolia from ${startBlock} to ${currentBlock}...`);
+
             let logs: any[] = [];
             let cursor = startBlock;
             while (cursor < currentBlock) {
@@ -67,11 +69,14 @@ export function usePools() {
                 if (end > currentBlock) end = currentBlock;
                 try {
                     const batch = await publicClient.getLogs({
-                        address: LENDA_FACTORY_ADDRESS,
+                        address: LENDA_FACTORY_ADDRESS as `0x${string}`,
                         event: poolEvent,
                         fromBlock: cursor,
                         toBlock: end
                     });
+                    if (batch.length > 0) {
+                        console.log(`>>> Found ${batch.length} pool(s) in block range ${cursor}-${end}`);
+                    }
                     logs = logs.concat(batch);
                 } catch (e) {
                     console.warn(`Logs fetch failed for block range ${cursor}-${end}:`, e);
@@ -79,14 +84,17 @@ export function usePools() {
                 cursor = end + 1n;
             }
 
+            console.log(`>>> Total pools detected: ${logs.length}`);
+
             if (logs.length === 0) {
                 setPools([]);
+                setIsLoading(false);
                 return;
             }
 
             // 2. Prepare Multicall for Pool & Profile Data
-            const poolAddresses = logs.map(log => log.args.pool as `0x${string}`);
-            const borrowerAddresses = logs.map(log => log.args.borrower as `0x${string}`);
+            const poolAddresses = logs.map(log => (log.args as any).pool as `0x${string}`);
+            const borrowerAddresses = logs.map(log => (log.args as any).borrower as `0x${string}`);
 
             const poolDetailsCalls = poolAddresses.flatMap((poolAddr, i) => [
                 { address: poolAddr, abi: TranchedPoolABI, functionName: 'creditLine' },

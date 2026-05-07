@@ -847,6 +847,15 @@ export const LendaFactoryABI = [
         "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
         "stateMutability": "view",
         "type": "function"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            { "indexed": true, "internalType": "address", "name": "pool", "type": "address" },
+            { "indexed": true, "internalType": "address", "name": "borrower", "type": "address" }
+        ],
+        "name": "PoolCreated",
+        "type": "event"
     }
 ] as const;
 
