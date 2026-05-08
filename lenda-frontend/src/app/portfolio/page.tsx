@@ -23,8 +23,18 @@ import { ConnectKitButton } from "connectkit";
 import { useAccount, usePublicClient } from "wagmi";
 import { formatUnits } from "viem";
 import Link from "next/link";
-import { POOL_TOKENS_ADDRESS } from "@/lib/contracts/addresses";
-import { PoolTokensABI } from "@/lib/contracts/abis";
+import { 
+    POOL_TOKENS_ADDRESS,
+    BORROWER_PROFILE_ADDRESS,
+    METADATA_REGISTRY_ADDRESS
+} from "@/lib/contracts/addresses";
+import { 
+    PoolTokensABI,
+    BorrowerProfileABI,
+    CreditLineABI,
+    MetadataRegistryABI,
+    TranchedPoolABI
+} from "@/lib/contracts/abis";
 
 // Interface for internal position tracking
 
@@ -103,7 +113,7 @@ export default function PortfolioPage() {
                 .filter(res => res.status === 'success')
                 .map(res => res.result as bigint);
 
-            // 2. Fetch all token info using multicall
+            // 2. Fetch all token info (contains pool address)
             const infoCalls = tokenIds.map(tokenId => ({
                 address: POOL_TOKENS_ADDRESS as `0x${string}`,
                 abi: PoolTokensABI,
@@ -116,31 +126,115 @@ export default function PortfolioPage() {
                 allowFailure: true
             });
 
-            const positions: PoolTokenPosition[] = [];
+            const rawPositions: any[] = [];
+            const uniquePools = new Set<string>();
+
             infoResults.forEach((res, i) => {
                 if (res.status === 'success') {
                     const info = res.result as any;
-                    const poolAddr = info.pool ?? info[0];
-                    const tranche = info.tranche ?? info[1];
-                    const principalAmt = info.principalAmount ?? info[2];
-                    const principalRed = info.principalRedeemed ?? info[3];
-                    const interestRed = info.interestRedeemed ?? info[4];
-
-                    const matchingPool = pools.find(
-                        (p) => p.id.toLowerCase() === String(poolAddr).toLowerCase()
-                    );
-
-                    positions.push({
+                    const poolAddr = (info.pool ?? info[0]) as string;
+                    rawPositions.push({
                         tokenId: tokenIds[i],
-                        poolAddress: String(poolAddr),
-                        tranche: Number(tranche),
-                        principalAmount: Number(formatUnits(BigInt(principalAmt), 6)),
-                        principalRedeemed: Number(formatUnits(BigInt(principalRed), 6)),
-                        interestRedeemed: Number(formatUnits(BigInt(interestRed), 6)),
-                        poolName: matchingPool?.name || `Pool ${String(poolAddr).slice(0, 6)}...${String(poolAddr).slice(-4)}`,
-                        apy: matchingPool?.apy || "—"
+                        poolAddr,
+                        tranche: Number(info.tranche ?? info[1]),
+                        principalAmount: Number(formatUnits(BigInt(info.principalAmount ?? info[2]), 6)),
+                        principalRedeemed: Number(formatUnits(BigInt(info.principalRedeemed ?? info[3]), 6)),
+                        interestRedeemed: Number(formatUnits(BigInt(info.interestRedeemed ?? info[4]), 6))
                     });
+                    uniquePools.add(poolAddr.toLowerCase());
                 }
+            });
+
+            // 3. For pools NOT in the marketplace cache, fetch their borrower and profile
+            const poolsToFetch = Array.from(uniquePools).filter(addr => 
+                !pools.some(p => p.id.toLowerCase() === addr)
+            );
+
+            const fallbackData: Record<string, { name: string; apy: string }> = {};
+
+            if (poolsToFetch.length > 0) {
+                // Fetch credit lines and custom names first
+                const poolMetaCalls = poolsToFetch.flatMap(addr => [
+                    { address: addr as `0x${string}`, abi: TranchedPoolABI, functionName: 'creditLine' },
+                    { address: METADATA_REGISTRY_ADDRESS as `0x${string}`, abi: MetadataRegistryABI, functionName: 'poolNames', args: [addr as `0x${string}`] }
+                ]);
+
+                const metaResults = await publicClient.multicall({
+                    contracts: poolMetaCalls as any[],
+                    allowFailure: true
+                });
+
+                const borrowerCalls: any[] = [];
+                poolsToFetch.forEach((addr, i) => {
+                    const clAddr = metaResults[i * 2]?.result as `0x${string}`;
+                    const customName = metaResults[i * 2 + 1]?.result as string;
+                    if (clAddr) {
+                        borrowerCalls.push({
+                            address: clAddr,
+                            abi: CreditLineABI,
+                            functionName: 'borrower'
+                        });
+                        fallbackData[addr] = { name: customName || `Pool ${addr.slice(0, 6)}...`, apy: "—" };
+                    }
+                });
+
+                if (borrowerCalls.length > 0) {
+                    const borrowerResults = await publicClient.multicall({
+                        contracts: borrowerCalls as any[],
+                        allowFailure: true
+                    });
+
+                    const profileCalls: any[] = [];
+                    const poolAddrsForProfiles: string[] = [];
+                    
+                    borrowerResults.forEach((res, i) => {
+                        if (res.status === 'success') {
+                            const bAddr = res.result as string;
+                            const pAddr = poolsToFetch[i];
+                            poolAddrsForProfiles.push(pAddr);
+                            profileCalls.push({
+                                address: BORROWER_PROFILE_ADDRESS as `0x${string}`,
+                                abi: BorrowerProfileABI,
+                                functionName: 'getProfile',
+                                args: [bAddr]
+                            });
+                        }
+                    });
+
+                    if (profileCalls.length > 0) {
+                        const profileResults = await publicClient.multicall({
+                            contracts: profileCalls as any[],
+                            allowFailure: true
+                        });
+
+                        profileResults.forEach((res, i) => {
+                            if (res.status === 'success') {
+                                const profile = res.result as any;
+                                const targetPoolAddr = poolAddrsForProfiles[i]; 
+                                if (targetPoolAddr && profile.name) {
+                                    fallbackData[targetPoolAddr].name = profile.name;
+                                }
+                            }
+                        });
+                    }
+                }
+            }
+
+            // 4. Final assembly
+            const positions: PoolTokenPosition[] = rawPositions.map(pos => {
+                const matchingPool = pools.find(p => p.id.toLowerCase() === pos.poolAddr.toLowerCase());
+                const fallback = fallbackData[pos.poolAddr.toLowerCase()];
+
+                return {
+                    tokenId: pos.tokenId,
+                    poolAddress: pos.poolAddr,
+                    tranche: pos.tranche,
+                    principalAmount: pos.principalAmount,
+                    principalRedeemed: pos.principalRedeemed,
+                    interestRedeemed: pos.interestRedeemed,
+                    poolName: matchingPool?.name || fallback?.name || `Pool ${pos.poolAddr.slice(0, 6)}...`,
+                    apy: matchingPool?.apy || fallback?.apy || "—"
+                };
             });
 
             setPoolTokenPositions(positions);
