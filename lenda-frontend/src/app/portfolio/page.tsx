@@ -7,62 +7,26 @@ import { useLendaRewards } from "@/hooks/useLendaRewards";
 import { useSeniorPool } from "@/hooks/useSeniorPool";
 import { usePools } from "@/hooks/usePools";
 import {
+    Loader2,
+    TrendingUp,
+    ArrowUpRight,
+    RefreshCcw,
     Wallet,
     Coins,
-    ArrowUpRight,
     PieChart,
     History,
-    TrendingUp,
     Download,
     AlertCircle,
-    SquareChartGantt,
-    Loader2
+    SquareChartGantt
 } from "lucide-react";
 import { ConnectKitButton } from "connectkit";
 import { useAccount, usePublicClient } from "wagmi";
 import { formatUnits } from "viem";
 import Link from "next/link";
 import { POOL_TOKENS_ADDRESS } from "@/lib/contracts/addresses";
+import { PoolTokensABI } from "@/lib/contracts/abis";
 
-// Minimal ABI for PoolTokens (ERC721Enumerable + getTokenInfo)
-const PoolTokensABI = [
-    {
-        inputs: [{ name: "owner", type: "address" }],
-        name: "balanceOf",
-        outputs: [{ name: "", type: "uint256" }],
-        stateMutability: "view",
-        type: "function"
-    },
-    {
-        inputs: [
-            { name: "owner", type: "address" },
-            { name: "index", type: "uint256" }
-        ],
-        name: "tokenOfOwnerByIndex",
-        outputs: [{ name: "", type: "uint256" }],
-        stateMutability: "view",
-        type: "function"
-    },
-    {
-        inputs: [{ name: "tokenId", type: "uint256" }],
-        name: "getTokenInfo",
-        outputs: [
-            {
-                components: [
-                    { name: "pool", type: "address" },
-                    { name: "tranche", type: "uint256" },
-                    { name: "principalAmount", type: "uint256" },
-                    { name: "principalRedeemed", type: "uint256" },
-                    { name: "interestRedeemed", type: "uint256" }
-                ],
-                name: "",
-                type: "tuple"
-            }
-        ],
-        stateMutability: "view",
-        type: "function"
-    }
-] as const;
+// Interface for internal position tracking
 
 interface PoolTokenPosition {
     tokenId: bigint;
@@ -78,96 +42,117 @@ interface PoolTokenPosition {
 export default function PortfolioPage() {
     const { address } = useAccount();
     const publicClient = usePublicClient();
-    const { tokenBalance, totalClaimed } = useLendaRewards();
-    const { fiduBalance, sharePrice } = useSeniorPool();
-    const { pools } = usePools();
+    const { tokenBalance, totalClaimed, refetch: refetchRewards } = useLendaRewards();
+    const { fiduBalance, sharePrice, refetch: refetchSeniorPool } = useSeniorPool();
+    const { pools, refetch: refetchPools, lastUpdated: poolsLastUpdated } = usePools();
 
     const [poolTokenPositions, setPoolTokenPositions] = useState<PoolTokenPosition[]>([]);
     const [isLoadingPositions, setIsLoadingPositions] = useState(false);
+    const [isRefreshing, setIsRefreshing] = useState(false);
     const [mounted, setMounted] = useState(false);
+    const [lastUpdated, setLastUpdated] = useState<number | null>(null);
+
+    const handleRefresh = async () => {
+        if (!address) return;
+        setIsRefreshing(true);
+        await Promise.all([
+            refetchRewards(),
+            refetchSeniorPool(),
+            refetchPools(),
+            fetchPositions()
+        ]);
+        setLastUpdated(Date.now());
+        setIsRefreshing(false);
+    };
 
     useEffect(() => { setMounted(true); }, []);
 
-    // Fetch the user's pool token positions
-    useEffect(() => {
-        async function fetchPositions() {
-            if (!publicClient || !address) {
-                console.log("Portfolio: skipping fetch - no publicClient or address");
+    const fetchPositions = async () => {
+        if (!publicClient || !address) return;
+        
+        setIsLoadingPositions(true);
+        try {
+            const balance = await publicClient.readContract({
+                address: POOL_TOKENS_ADDRESS as `0x${string}`,
+                abi: PoolTokensABI,
+                functionName: "balanceOf",
+                args: [address]
+            });
+
+            const count = Number(balance);
+            if (count === 0) {
+                setPoolTokenPositions([]);
+                setIsLoadingPositions(false);
                 return;
             }
-            setIsLoadingPositions(true);
-            try {
-                console.log("Portfolio: fetching pool token balance for", address);
-                const balance = await publicClient.readContract({
-                    address: POOL_TOKENS_ADDRESS as `0x${string}`,
-                    abi: PoolTokensABI,
-                    functionName: "balanceOf",
-                    args: [address]
-                });
 
-                const count = Number(balance);
-                console.log("Portfolio: user owns", count, "pool tokens");
+            // 1. Fetch all token IDs using multicall
+            const tokenIdCalls = Array.from({ length: count }).map((_, i) => ({
+                address: POOL_TOKENS_ADDRESS as `0x${string}`,
+                abi: PoolTokensABI,
+                functionName: "tokenOfOwnerByIndex",
+                args: [address, BigInt(i)]
+            }));
 
-                if (count === 0) {
-                    setPoolTokenPositions([]);
-                    setIsLoadingPositions(false);
-                    return;
+            const tokenIdResults = await publicClient.multicall({
+                contracts: tokenIdCalls as any[],
+                allowFailure: true
+            });
+
+            const tokenIds = tokenIdResults
+                .filter(res => res.status === 'success')
+                .map(res => res.result as bigint);
+
+            // 2. Fetch all token info using multicall
+            const infoCalls = tokenIds.map(tokenId => ({
+                address: POOL_TOKENS_ADDRESS as `0x${string}`,
+                abi: PoolTokensABI,
+                functionName: "getTokenInfo",
+                args: [tokenId]
+            }));
+
+            const infoResults = await publicClient.multicall({
+                contracts: infoCalls as any[],
+                allowFailure: true
+            });
+
+            const positions: PoolTokenPosition[] = [];
+            infoResults.forEach((res, i) => {
+                if (res.status === 'success') {
+                    const info = res.result as any;
+                    const poolAddr = info.pool ?? info[0];
+                    const tranche = info.tranche ?? info[1];
+                    const principalAmt = info.principalAmount ?? info[2];
+                    const principalRed = info.principalRedeemed ?? info[3];
+                    const interestRed = info.interestRedeemed ?? info[4];
+
+                    const matchingPool = pools.find(
+                        (p) => p.id.toLowerCase() === String(poolAddr).toLowerCase()
+                    );
+
+                    positions.push({
+                        tokenId: tokenIds[i],
+                        poolAddress: String(poolAddr),
+                        tranche: Number(tranche),
+                        principalAmount: Number(formatUnits(BigInt(principalAmt), 6)),
+                        principalRedeemed: Number(formatUnits(BigInt(principalRed), 6)),
+                        interestRedeemed: Number(formatUnits(BigInt(interestRed), 6)),
+                        poolName: matchingPool?.name || `Pool ${String(poolAddr).slice(0, 6)}...${String(poolAddr).slice(-4)}`,
+                        apy: matchingPool?.apy || "—"
+                    });
                 }
+            });
 
-                const positions: PoolTokenPosition[] = [];
-                for (let i = 0; i < count; i++) {
-                    try {
-                        const tokenId = await publicClient.readContract({
-                            address: POOL_TOKENS_ADDRESS as `0x${string}`,
-                            abi: PoolTokensABI,
-                            functionName: "tokenOfOwnerByIndex",
-                            args: [address, BigInt(i)]
-                        });
-
-                        console.log("Portfolio: reading info for token", tokenId.toString());
-
-                        const info = await publicClient.readContract({
-                            address: POOL_TOKENS_ADDRESS as `0x${string}`,
-                            abi: PoolTokensABI,
-                            functionName: "getTokenInfo",
-                            args: [tokenId]
-                        });
-
-                        console.log("Portfolio: token info raw:", JSON.stringify(info, (_, v) => typeof v === 'bigint' ? v.toString() : v));
-
-                        // viem returns struct as object with named fields
-                        const poolAddr = (info as any).pool ?? (info as any)[0];
-                        const tranche = (info as any).tranche ?? (info as any)[1];
-                        const principalAmt = (info as any).principalAmount ?? (info as any)[2];
-                        const principalRed = (info as any).principalRedeemed ?? (info as any)[3];
-                        const interestRed = (info as any).interestRedeemed ?? (info as any)[4];
-
-                        const matchingPool = pools.find(
-                            (p) => p.id.toLowerCase() === String(poolAddr).toLowerCase()
-                        );
-
-                        positions.push({
-                            tokenId,
-                            poolAddress: String(poolAddr),
-                            tranche: Number(tranche),
-                            principalAmount: Number(formatUnits(BigInt(principalAmt), 6)),
-                            principalRedeemed: Number(formatUnits(BigInt(principalRed), 6)),
-                            interestRedeemed: Number(formatUnits(BigInt(interestRed), 6)),
-                            poolName: matchingPool?.name || `Pool ${String(poolAddr).slice(0, 6)}...${String(poolAddr).slice(-4)}`,
-                            apy: matchingPool?.apy || "—"
-                        });
-                    } catch (tokenErr) {
-                        console.error("Portfolio: error reading token at index", i, tokenErr);
-                    }
-                }
-                console.log("Portfolio: resolved", positions.length, "positions");
-                setPoolTokenPositions(positions);
-            } catch (err) {
-                console.error("Portfolio: error fetching pool token positions:", err);
-            } finally {
-                setIsLoadingPositions(false);
-            }
+            setPoolTokenPositions(positions);
+            if (!lastUpdated) setLastUpdated(Date.now());
+        } catch (err) {
+            console.error("Portfolio: error fetching positions:", err);
+        } finally {
+            setIsLoadingPositions(false);
         }
+    };
+
+    useEffect(() => {
         fetchPositions();
     }, [publicClient, address, pools]);
 
@@ -214,11 +199,33 @@ export default function PortfolioPage() {
             <div className="mesh-gradient opacity-30" />
 
             <div className="pt-32 px-6 max-w-7xl mx-auto relative z-10">
-                <div className="mb-12">
-                    <h1 className="text-4xl font-bold italic uppercase tracking-tight">
-                        Lender <span className="text-blue-500 text-3xl font-light tracking-widest lowercase">.portfolio</span>
-                    </h1>
-                    <p className="text-slate-400 mt-2 font-medium">Track your active positions and manage your protocol rewards.</p>
+                <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-12">
+                    <div>
+                        <h1 className="text-4xl font-bold italic uppercase tracking-tight">
+                            Lender <span className="text-blue-500 text-3xl font-light tracking-widest lowercase">.portfolio</span>
+                        </h1>
+                        <p className="text-slate-400 mt-2 font-medium">Track your active positions and manage your protocol rewards.</p>
+                    </div>
+
+                    <div className="flex items-center gap-4">
+                        <div className="flex flex-col items-end">
+                            <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest leading-none mb-1">
+                                Data synchronized
+                            </div>
+                            <div className="text-[10px] font-medium text-blue-400/60 lowercase leading-none">
+                                {lastUpdated ? new Date(lastUpdated).toLocaleTimeString() : 'connecting...'}
+                            </div>
+                        </div>
+                        
+                        <button 
+                            onClick={handleRefresh}
+                            disabled={isRefreshing}
+                            className={`p-3 rounded-xl bg-white/[0.03] border border-white/10 text-slate-400 transition-all hover:bg-white/[0.08] hover:text-blue-400 ${isRefreshing ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            title="Refresh Data"
+                        >
+                            <RefreshCcw className={`w-5 h-5 ${isRefreshing ? 'animate-spin-slow text-blue-500' : ''}`} />
+                        </button>
+                    </div>
                 </div>
 
                 {/* Portfolio Stats */}
